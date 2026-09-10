@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>捏捏乐 · 角色史莱姆</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='26' fill='%23A78BFA'/%3E%3Ccircle cx='24' cy='26' r='6' fill='white' opacity='.55'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #FFF7F0;
+      --ink: #2B2140;
+      --pink: #FF6B9D;
+      --glass: rgba(255, 255, 255, 0.55);
+      --shadow: rgba(43, 33, 64, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI Rounded", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #app { position: relative; width: 100%; height: 100%; }
+
+    #glow {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 55% 50% at 50% 54%, rgba(255, 182, 210, 0.35), transparent 70%),
+        radial-gradient(ellipse 40% 35% at 50% 70%, rgba(196, 164, 255, 0.22), transparent 70%),
+        radial-gradient(ellipse 80% 60% at 50% 100%, rgba(255, 220, 200, 0.4), transparent 60%);
+      z-index: 0;
+    }
+
+    canvas#c {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+      z-index: 1;
+    }
+
+    canvas#c.is-pressing { cursor: grabbing; }
+
+    .ui {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: clamp(18px, 3.5vw, 36px);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand h1 {
+      font-size: clamp(28px, 5vw, 44px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+    }
+
+    .brand h1 span { color: var(--pink); }
+
+    .brand p {
+      margin-top: 8px;
+      font-size: clamp(12px, 1.6vw, 14px);
+      color: rgba(43, 33, 64, 0.55);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .badge {
+      pointer-events: none;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--glass);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 8px 24px var(--shadow);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(43, 33, 64, 0.75);
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      max-width: min(46vw, 280px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding-bottom: 6px;
+    }
+
+    .hint {
+      font-size: 14px;
+      color: rgba(43, 33, 64, 0.5);
+      letter-spacing: 0.08em;
+      text-align: center;
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+
+    .hint.is-hidden {
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+    }
+
+    .dock {
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 22px;
+      background: var(--glass);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 12px 40px var(--shadow);
+    }
+
+    .dock-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .panel-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(43, 33, 64, 0.5);
+      letter-spacing: 0.08em;
+      margin-right: 2px;
+    }
+
+    .chars { display: flex; gap: 6px; }
+
+    .char-btn {
+      pointer-events: auto;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      background: #fff;
+      border-radius: 16px;
+      width: 58px;
+      padding: 6px 4px 5px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(43, 33, 64, 0.12);
+      transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, border-color 0.18s ease;
+      outline: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .char-btn:hover { transform: translateY(-2px) scale(1.05); }
+    .char-btn:focus-visible { box-shadow: 0 0 0 3px var(--pink), 0 4px 14px rgba(43, 33, 64, 0.12); }
+    .char-btn.is-active {
+      border-color: var(--ink);
+      transform: translateY(-2px) scale(1.08);
+      box-shadow: 0 6px 18px rgba(43, 33, 64, 0.2);
+    }
+
+    .char-face {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 -4px 8px rgba(0,0,0,0.08);
+    }
+
+    .char-face .eye {
+      position: absolute;
+      width: 5px;
+      height: 7px;
+      background: #2B2140;
+      border-radius: 50%;
+      top: 12px;
+    }
+    .char-face .eye.l { left: 8px; }
+    .char-face .eye.r { right: 8px; }
+    .char-face .eye::after {
+      content: "";
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: #fff;
+      border-radius: 50%;
+      top: 1px;
+      left: 1px;
+    }
+    .char-face .mouth {
+      position: absolute;
+      left: 50%;
+      top: 21px;
+      width: 8px;
+      height: 4px;
+      border: 1.5px solid #2B2140;
+      border-top: 0;
+      border-radius: 0 0 8px 8px;
+      transform: translateX(-50%);
+    }
+    .char-face .blush {
+      position: absolute;
+      width: 6px;
+      height: 3px;
+      background: rgba(255, 120, 160, 0.55);
+      border-radius: 50%;
+      top: 18px;
+    }
+    .char-face .blush.l { left: 4px; }
+    .char-face .blush.r { right: 4px; }
+
+    .char-btn[data-id="pudding"] .char-face .eye { height: 2px; width: 7px; top: 14px; border-radius: 2px; background: transparent; border-top: 2px solid #2B2140; }
+    .char-btn[data-id="pudding"] .char-face .eye::after { display: none; }
+    .char-btn[data-id="drop"] .char-face .eye { width: 7px; height: 9px; }
+    .char-btn[data-id="dango"] .char-face .eye { width: 6px; height: 6px; border-radius: 50%; top: 13px; }
+    .char-btn[data-id="ghost"] .char-face .eye { width: 4px; height: 6px; top: 13px; }
+    .char-btn[data-id="ghost"] .char-face .mouth {
+      width: 6px; height: 6px; border: 1.5px solid #2B2140; border-radius: 50%; top: 20px; background: transparent;
+    }
+    .char-btn[data-id="cat"] .char-face .mouth { width: 10px; height: 5px; border-radius: 0; border: 0; background:
+      linear-gradient(#2B2140, #2B2140) center/10px 1.5px no-repeat,
+      radial-gradient(circle at 20% 0, transparent 45%, #2B2140 46% 55%, transparent 56%),
+      radial-gradient(circle at 80% 0, transparent 45%, #2B2140 46% 55%, transparent 56%);
+    }
+    .char-btn[data-id="nezha"] .char-face { background: radial-gradient(circle at 35% 30%, #fff9, #E11D48 50%, #E11D48) !important; }
+    .char-btn[data-id="nezha"] .char-face::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -2px;
+      width: 18px;
+      height: 10px;
+      transform: translateX(-50%);
+      background:
+        radial-gradient(circle at 2px 6px, #2B2140 4px, transparent 4.5px),
+        radial-gradient(circle at 16px 6px, #2B2140 4px, transparent 4.5px);
+    }
+    .char-btn[data-id="nezha"] .char-face .eye { height: 4px; width: 8px; top: 13px; border-radius: 2px; transform: rotate(12deg); }
+    .char-btn[data-id="nezha"] .char-face .eye.r { transform: rotate(-12deg); }
+    .char-btn[data-id="nezha"] .char-face .eye::after { display: none; }
+    .char-btn[data-id="nezha"] .char-face .mouth {
+      width: 10px; height: 3px; border: 0; background: #2B2140; border-radius: 2px; top: 21px;
+      transform: translateX(-40%) rotate(-8deg);
+    }
+
+    .char-name {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(43, 33, 64, 0.7);
+      letter-spacing: 0.02em;
+      line-height: 1;
+    }
+
+    .swatches { display: flex; gap: 7px; }
+
+    .swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 3px 10px rgba(43, 33, 64, 0.15);
+      cursor: pointer;
+      pointer-events: auto;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      outline: none;
+    }
+    .swatch:hover { transform: scale(1.12); }
+    .swatch:focus-visible { box-shadow: 0 0 0 3px var(--pink); }
+    .swatch.is-active { transform: scale(1.14); box-shadow: 0 0 0 3px var(--ink); }
+
+    .stats {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(43, 33, 64, 0.45);
+      letter-spacing: 0.04em;
+    }
+    .stats strong {
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+      min-width: 1.5em;
+      display: inline-block;
+    }
+
+    @media (max-width: 720px) {
+      .badge { display: none; }
+      .char-btn { width: 48px; border-radius: 14px; }
+      .char-face { width: 28px; height: 28px; }
+      .char-face .eye { top: 10px; }
+      .char-face .eye.l { left: 6px; }
+      .char-face .eye.r { right: 6px; }
+      .char-face .mouth { top: 17px; }
+      .char-face .blush { top: 15px; }
+      .stats { display: none; }
+      .panel-label { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hint, .swatch, .char-btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="glow"></div>
+    <canvas id="c"></canvas>
+    <div class="ui">
+      <header>
+        <div class="brand">
+          <h1>捏捏<span>乐</span></h1>
+          <p>Character · Squish · Bounce</p>
+        </div>
+        <div class="badge" id="badge">选一位小伙伴，开始捏</div>
+      </header>
+      <footer>
+        <div class="hint" id="hint">按住捏扁 · 拖拽拉长 · 松手回弹 · 双击开心跳</div>
+        <div class="dock">
+          <div class="dock-row">
+            <span class="panel-label">角色</span>
+            <div class="chars" id="chars"></div>
+          </div>
+          <div class="dock-row">
+            <span class="panel-label">色调</span>
+            <div class="swatches" id="swatches"></div>
+          </div>
+        </div>
+        <div class="stats">
+          <span>捏压 <strong id="stat-press">0%</strong></span>
+          <span>回弹 <strong id="stat-wobble">0</strong></span>
+          <span>次数 <strong id="stat-count">0</strong></span>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- classic script: works when double-clicked via file:// (no ES module CORS) -->
+  <script src="./assets/three.global.js"></script>
+  <script>
+    if (!window.THREE) {
+      document.body.insertAdjacentHTML("beforeend",
+        '<div style="position:fixed;inset:auto 16px 16px 16px;z-index:99;padding:12px 16px;border-radius:12px;background:#2B2140;color:#fff;font:14px/1.5 system-ui,sans-serif;">无法加载 three.global.js，请确认 assets/ 目录完整。</div>');
+      throw new Error("THREE global missing");
+    }
+    const THREE = window.THREE;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // —— 角色定义：轮廓 + 性格色 + 台词 + 五官风格 ——
+    const CHARACTERS = [
+      {
+        id: "mochi",
+        name: "圆宝",
+        shape: "ball",
+        color: "#A78BFA",
+        atten: "#C4B5FF",
+        blush: "#FF8FB8",
+        lines: {
+          idle: "温柔地等你来捏",
+          press: "嗯…有点扁了",
+          release: "弹回来啦～",
+          drag: "被拉长了啦！",
+          happy: "圆宝开心转圈！",
+        },
+        face: { eye: "soft", mouth: "smile", blink: true },
+        personality: { breath: 1, jiggle: 1, bounce: 1 },
+      },
+      {
+        id: "pudding",
+        name: "布丁仔",
+        shape: "pudding",
+        color: "#F6D06B",
+        atten: "#FDE68A",
+        blush: "#FF9A7A",
+        lines: {
+          idle: "我是焦糖布丁，轻轻抖",
+          press: "布丁要塌啦！",
+          release: "Q弹回正！",
+          drag: "别把焦糖拉丝…",
+          happy: "布丁跳舞！",
+        },
+        face: { eye: "happy", mouth: "open-smile", blink: false },
+        personality: { breath: 0.85, jiggle: 1.45, bounce: 0.9 },
+        caramel: true,
+      },
+      {
+        id: "drop",
+        name: "滴滴",
+        shape: "drop",
+        color: "#5EC8E8",
+        atten: "#A5F3FC",
+        blush: "#7DD3FC",
+        lines: {
+          idle: "有点害羞…轻一点哦",
+          press: "呜…要哭了",
+          release: "还好还好…",
+          drag: "水滴要被拉断了！",
+          happy: "闪闪发光！",
+        },
+        face: { eye: "sparkle", mouth: "small-o", blink: true },
+        personality: { breath: 1.1, jiggle: 0.85, bounce: 1.1 },
+      },
+      {
+        id: "cat",
+        name: "爪爪",
+        shape: "cat",
+        color: "#5EEAD4",
+        atten: "#99F6E4",
+        blush: "#FDA4AF",
+        lines: {
+          idle: "喵呜…来捏一下嘛",
+          press: "喵嗷——！",
+          release: "呼噜呼噜",
+          drag: "尾巴被拽住了喵！",
+          happy: "开心到炸毛！",
+        },
+        face: { eye: "cat", mouth: "cat", blink: true },
+        personality: { breath: 1, jiggle: 1.05, bounce: 1.15 },
+      },
+      {
+        id: "nezha",
+        name: "哪吒",
+        shape: "nezha",
+        color: "#E11D48",
+        atten: "#FB7185",
+        blush: "#F97316",
+        lines: {
+          idle: "我命由我不由天",
+          press: "敢捏小爷？",
+          release: "火尖枪伺候！",
+          drag: "混天绫都拉不住！",
+          happy: "三头六臂也开心！",
+        },
+        face: { eye: "nezha", mouth: "smirk", blink: true },
+        personality: { breath: 0.95, jiggle: 1.1, bounce: 1.3 },
+        qiankun: true,
+      },
+    ];
+
+    const TINTS = [
+      { name: "原色", mul: 1.0, sat: 1.0 },
+      { name: "更透", mul: 1.12, sat: 0.85 },
+      { name: "更浓", mul: 0.88, sat: 1.15 },
+      { name: "樱花", hueShift: -0.04, mul: 1.05 },
+      { name: "海盐", hueShift: 0.08, mul: 1.05 },
+    ];
+
+    // —— renderer / scene ——
+    const canvas = document.getElementById("c");
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance",
+      });
+    } catch (err) {
+      document.body.insertAdjacentHTML("beforeend",
+        '<div style="position:fixed;left:16px;right:16px;bottom:16px;z-index:99;padding:12px 16px;border-radius:12px;background:#2B2140;color:#fff;font:14px/1.5 system-ui,sans-serif;">当前环境无法创建 WebGL，请用 Chrome / Edge / Safari 打开，并确认已开启硬件加速。</div>');
+      throw err;
+    }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 50);
+    camera.position.set(0, 0.12, 5.55);
+
+    function makeEnvironment() {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const ctx = c.getContext("2d");
+      const g = ctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0, "#ffe4f0");
+      g.addColorStop(0.45, "#e8d4ff");
+      g.addColorStop(1, "#fff4ea");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 256, 256);
+      for (const [x, y, r, col] of [
+        [80, 60, 50, "rgba(255,255,255,0.85)"],
+        [190, 90, 40, "rgba(255,200,230,0.7)"],
+        [130, 180, 55, "rgba(200,180,255,0.55)"],
+      ]) {
+        const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+        rg.addColorStop(0, col);
+        rg.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = rg;
+        ctx.fillRect(0, 0, 256, 256);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const env = pmrem.fromEquirectangular(tex).texture;
+      tex.dispose();
+      pmrem.dispose();
+      return env;
+    }
+    scene.environment = makeEnvironment();
+
+    const key = new THREE.DirectionalLight(0xfff0f5, 1.35);
+    key.position.set(2.5, 3.5, 4);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xd4c4ff, 0.7);
+    fill.position.set(-3, 1, 2);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffc0e0, 0.55);
+    rim.position.set(0, -2, -3);
+    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xfff5fa, 0.35));
+
+    function makeShadowTexture() {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const ctx = c.getContext("2d");
+      const g = ctx.createRadialGradient(128, 128, 20, 128, 128, 128);
+      g.addColorStop(0, "rgba(43,33,64,0.28)");
+      g.addColorStop(0.45, "rgba(43,33,64,0.14)");
+      g.addColorStop(1, "rgba(43,33,64,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 256, 256);
+      return new THREE.CanvasTexture(c);
+    }
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 3.2),
+      new THREE.MeshBasicMaterial({
+        map: makeShadowTexture(),
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = -1.4;
+    scene.add(shadow);
+
+    // —— body mesh ——
+    const RADIUS = 1.1;
+    const geo = new THREE.SphereGeometry(RADIUS, 96, 96);
+    const posAttr = geo.attributes.position;
+    const vertexCount = posAttr.count;
+    const rest = new Float32Array(posAttr.array);
+
+    const material = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(CHARACTERS[0].color),
+      roughness: 0.22,
+      metalness: 0,
+      transmission: 0.72,
+      thickness: 1.85,
+      ior: 1.36,
+      attenuationColor: new THREE.Color(CHARACTERS[0].atten),
+      attenuationDistance: 0.9,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.35,
+      sheen: 0.45,
+      sheenRoughness: 0.55,
+      sheenColor: new THREE.Color("#ffffff"),
+      envMapIntensity: 1.0,
+      specularIntensity: 0.85,
+    });
+
+    const slime = new THREE.Mesh(geo, material);
+    scene.add(slime);
+
+    // caramel cap for pudding (extra shell)
+    const capGeo = new THREE.SphereGeometry(RADIUS * 1.02, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.38);
+    const capMat = new THREE.MeshPhysicalMaterial({
+      color: "#C47A2C",
+      roughness: 0.35,
+      metalness: 0,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.3,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const caramelCap = new THREE.Mesh(capGeo, capMat);
+    caramelCap.visible = false;
+    scene.add(caramelCap);
+
+    // 乾坤圈 for Ne Zha
+    const ringGeo = new THREE.TorusGeometry(0.72, 0.07, 16, 48);
+    const ringMat = new THREE.MeshPhysicalMaterial({
+      color: "#F5C542",
+      metalness: 0.85,
+      roughness: 0.25,
+      clearcoat: 0.6,
+      envMapIntensity: 1.3,
+    });
+    const qiankunRing = new THREE.Mesh(ringGeo, ringMat);
+    qiankunRing.visible = false;
+    qiankunRing.rotation.x = Math.PI / 2;
+    scene.add(qiankunRing);
+
+    // twin hair buns
+    const bunGeo = new THREE.SphereGeometry(0.26, 24, 24);
+    const bunMat = new THREE.MeshPhysicalMaterial({
+      color: "#1C1917",
+      roughness: 0.45,
+      clearcoat: 0.3,
+    });
+    const bunL = new THREE.Mesh(bunGeo, bunMat);
+    const bunR = new THREE.Mesh(bunGeo, bunMat);
+    bunL.visible = bunR.visible = false;
+    scene.add(bunL, bunR);
+
+    // —— face billboard ——
+    const faceCanvas = document.createElement("canvas");
+    faceCanvas.width = faceCanvas.height = 512;
+    const faceCtx = faceCanvas.getContext("2d");
+    const faceTex = new THREE.CanvasTexture(faceCanvas);
+    faceTex.colorSpace = THREE.SRGBColorSpace;
+    faceTex.anisotropy = 4;
+
+    const faceMat = new THREE.MeshBasicMaterial({
+      map: faceTex,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const faceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), faceMat);
+    faceMesh.position.set(0, 0.05, RADIUS * 0.95);
+    faceMesh.renderOrder = 3;
+    faceMat.depthTest = false;
+    slime.add(faceMesh);
+
+    // particles
+    const particles = [];
+    const particleGeo = new THREE.SphereGeometry(0.035, 8, 8);
+    for (let i = 0; i < 40; i++) {
+      const m = new THREE.Mesh(
+        particleGeo,
+        new THREE.MeshPhysicalMaterial({
+          color: material.color.clone(),
+          roughness: 0.2,
+          transmission: 0.55,
+          thickness: 0.4,
+          transparent: true,
+          opacity: 0,
+        })
+      );
+      m.visible = false;
+      scene.add(m);
+      particles.push({ mesh: m, vel: new THREE.Vector3(), life: 0, maxLife: 0.75 });
+    }
+
+    // —— state ——
+    let character = CHARACTERS[0];
+    let restShaped = new Float32Array(rest.length);
+    let tintIndex = 0;
+
+    const state = {
+      pressing: false,
+      dragging: false,
+      hovering: false,
+      pressStrength: 0,
+      pressTarget: 0,
+      _pressVel: 0,
+      dragVec: new THREE.Vector3(),
+      dragTarget: new THREE.Vector3(),
+      squash: 0,
+      squashVel: 0,
+      stretch: new THREE.Vector3(),
+      stretchVel: new THREE.Vector3(),
+      wobble: 0,
+      wobbleVel: 0,
+      happyBounce: 0,
+      happyVel: 0,
+      lean: new THREE.Vector2(),
+      leanTarget: new THREE.Vector2(),
+      pressCount: 0,
+      lastPointer: new THREE.Vector2(),
+      movedFar: false,
+      color: new THREE.Color(CHARACTERS[0].color),
+      atten: new THREE.Color(CHARACTERS[0].atten),
+      targetColor: new THREE.Color(CHARACTERS[0].color),
+      targetAtten: new THREE.Color(CHARACTERS[0].atten),
+      expr: "idle",
+      exprUntil: 0,
+      blink: 1,
+      nextBlink: 2 + Math.random() * 3,
+      faceDirty: true,
+      faceCenter: new THREE.Vector3(0, 0.1, RADIUS),
+    };
+
+    const elHint = document.getElementById("hint");
+    const elBadge = document.getElementById("badge");
+    const elStatPress = document.getElementById("stat-press");
+    const elStatWobble = document.getElementById("stat-wobble");
+    const elStatCount = document.getElementById("stat-count");
+
+    function hideHint() {
+      elHint.classList.add("is-hidden");
+    }
+
+    function setExpr(name, hold = 1.2) {
+      state.expr = name;
+      state.exprUntil = performance.now() / 1000 + hold;
+      state.faceDirty = true;
+    }
+
+    function say(text) {
+      elBadge.textContent = text;
+    }
+
+    // —— silhouette builders: returns { sxz, sy } + optional bump ——
+    function shapeScale(nx, ny, nz, shape) {
+      const y = ny;
+      switch (shape) {
+        case "ball":
+          return { sxz: 1, sy: 1, bump: 0 };
+        case "pudding": {
+          // wide bottom, narrow top, slightly flat crown
+          const sxz = y > 0 ? 1 - y * 0.3 : 1 + (-y) * 0.2;
+          const sy = y > 0.5 ? 1 - (y - 0.5) * 0.35 : 1 + Math.max(0, -y) * 0.04;
+          return { sxz, sy, bump: 0 };
+        }
+        case "drop": {
+          // pointed top (narrow xz, keep height), bulbous bottom
+          const sxz = y > 0 ? Math.pow(1 - y, 0.55) * 0.85 + 0.15 : 1 + (-y) * 0.2;
+          const sy = y > 0 ? 1 - y * 0.12 : 1 + (-y) * 0.06;
+          return { sxz, sy, bump: 0 };
+        }
+        case "mochi": {
+          const sxz = 1 + Math.max(0, -y) * 0.1 - Math.max(0, y) * 0.08;
+          const sy = 1 + Math.max(0, -y) * 0.04 - Math.max(0, y) * 0.1;
+          return { sxz, sy, bump: 0 };
+        }
+        case "ghost": {
+          let bump = 0;
+          if (y < -0.35) {
+            const hem = (-y - 0.35) / 0.65;
+            bump = Math.sin(Math.atan2(nz, nx) * 5) * 0.1 * hem - hem * 0.06;
+          }
+          return { sxz: 1 + Math.max(0, -y) * 0.04, sy: 1, bump };
+        }
+        case "cat": {
+          const earL = Math.exp(-(((nx + 0.55) ** 2 + (ny - 0.72) ** 2 + nz * nz) * 18));
+          const earR = Math.exp(-(((nx - 0.55) ** 2 + (ny - 0.72) ** 2 + nz * nz) * 18));
+          const bump = (earL + earR) * 0.45;
+          return {
+            sxz: 1 + Math.max(0, -y) * 0.05,
+            sy: 1 - y * 0.04,
+            bump,
+          };
+        }
+        case "nezha": {
+          // chubby body + twin hair buns
+          const bunL = Math.exp(-(((nx + 0.38) ** 2 + (ny - 0.88) ** 2 + nz * nz) * 22));
+          const bunR = Math.exp(-(((nx - 0.38) ** 2 + (ny - 0.88) ** 2 + nz * nz) * 22));
+          const bump = (bunL + bunR) * 0.55;
+          return {
+            sxz: 1 + Math.max(0, -y) * 0.08 - Math.max(0, y) * 0.04,
+            sy: 1 - y * 0.06,
+            bump,
+          };
+        }
+        default:
+          return { sxz: 1, sy: 1, bump: 0 };
+      }
+    }
+
+    function shapeRadius(nx, ny, nz, shape) {
+      const s = shapeScale(nx, ny, nz, shape);
+      return (s.sxz + s.sy) * 0.5 + s.bump;
+    }
+
+    function rebuildRestShape() {
+      const shape = character.shape;
+      for (let i = 0; i < rest.length; i += 3) {
+        const x = rest[i];
+        const y = rest[i + 1];
+        const z = rest[i + 2];
+        const rl = Math.hypot(x, y, z) || 1;
+        const nx = x / rl;
+        const ny = y / rl;
+        const nz = z / rl;
+        const s = shapeScale(nx, ny, nz, shape);
+        const bump = 1 + s.bump;
+        restShaped[i] = x * s.sxz * bump;
+        restShaped[i + 1] = y * s.sy * bump;
+        restShaped[i + 2] = z * s.sxz * bump;
+      }
+      posAttr.array.set(restShaped);
+      posAttr.needsUpdate = true;
+      geo.computeVertexNormals();
+      state.faceDirty = true;
+    }
+
+    // —— face drawing ——
+    function drawEye(ctx, x, y, style, open, blushColor) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = "#2B2140";
+      ctx.strokeStyle = "#2B2140";
+      ctx.lineCap = "round";
+
+      if (style === "happy") {
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.arc(0, 8, 22, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.stroke();
+      } else if (style === "cat") {
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(-18, 2);
+        ctx.lineTo(18, -2);
+        ctx.stroke();
+      } else if (style === "nezha") {
+        // fierce angled eyes + red liner
+        ctx.rotate(x < 256 ? -0.22 : 0.22);
+        if (open < 0.15) {
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.moveTo(-18, 4);
+          ctx.lineTo(18, -2);
+          ctx.stroke();
+        } else {
+          const scale = Math.max(open, 0.35);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 20, 14 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.ellipse(-5, -4 * scale, 6, 5 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // crimson liner
+          ctx.strokeStyle = "#7F1D1D";
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.moveTo(-20, -10);
+          ctx.quadraticCurveTo(0, -18 * scale, 20, -8);
+          ctx.stroke();
+        }
+      } else if (open < 0.15) {
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(-16, 0);
+        ctx.quadraticCurveTo(0, 10, 16, 0);
+        ctx.stroke();
+      } else {
+        const rx = style === "sparkle" ? 22 : style === "wide" ? 20 : 18;
+        const ry = style === "sparkle" ? 28 : style === "round" ? 22 : style === "wide" ? 26 : 24;
+        const scale = Math.max(open, 0.2);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry * scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.ellipse(-6, -8 * scale, 7, 9 * scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (style === "sparkle" || style === "wide") {
+          ctx.beginPath();
+          ctx.ellipse(8, 6 * scale, 4, 5 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawMouth(ctx, x, y, style, open) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.strokeStyle = "#2B2140";
+      ctx.fillStyle = "#2B2140";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (style === "smile") {
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.arc(0, -6, 22, 0.15 * Math.PI, 0.85 * Math.PI);
+        ctx.stroke();
+      } else if (style === "smirk") {
+        // mischievous asymmetric grin
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(-24, 2);
+        ctx.quadraticCurveTo(4, 22 + open * 8, 28, -2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(18, 2);
+        ctx.lineTo(28, -2);
+        ctx.stroke();
+      } else if (style === "open-smile") {
+        ctx.beginPath();
+        ctx.ellipse(0, 4, 20 + open * 6, 14 + open * 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#FF8FB8";
+        ctx.beginPath();
+        ctx.ellipse(0, 10, 12, 7, 0, 0, Math.PI);
+        ctx.fill();
+      } else if (style === "big-smile") {
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 26 + open * 8, 18 + open * 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#FF8FB8";
+        ctx.beginPath();
+        ctx.ellipse(0, 10, 14, 8, 0, 0, Math.PI);
+        ctx.fill();
+      } else if (style === "small-o" || style === "o") {
+        const r = style === "o" ? 14 + open * 8 : 10 + open * 6;
+        ctx.beginPath();
+        ctx.ellipse(0, 2, r, r * 1.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (style === "cat") {
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(-24, 0);
+        ctx.lineTo(0, 6);
+        ctx.lineTo(24, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(-10, -2, 8, 0.2 * Math.PI, 0.9 * Math.PI);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(10, -2, 8, 0.1 * Math.PI, 0.8 * Math.PI);
+        ctx.stroke();
+      } else if (style === "flat") {
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(-18, 2);
+        ctx.lineTo(18, 2);
+        ctx.stroke();
+      } else {
+        // default small smile
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.arc(0, -4, 14, 0.2 * Math.PI, 0.8 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawFace() {
+      const ctx = faceCtx;
+      const S = 512;
+      ctx.clearRect(0, 0, S, S);
+
+      const expr = state.expr;
+      const open = expr === "press" ? 0.35 : expr === "happy" ? 1.15 : expr === "drag" ? 0.9 : 1;
+      const mouthOpen = expr === "press" ? 0.3 : expr === "happy" ? 1.2 : expr === "drag" ? 0.7 : 0.45;
+
+      // blush always (character color)
+      const blush = character.blush;
+      ctx.globalAlpha = 0.45 + (expr === "happy" ? 0.25 : expr === "press" ? 0.15 : 0);
+      ctx.fillStyle = blush;
+      for (const bx of [150, 362]) {
+        ctx.beginPath();
+        ctx.ellipse(bx, 292, 42, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Ne Zha forehead flame mark
+      if (character.id === "nezha") {
+        ctx.save();
+        ctx.translate(256, 145);
+        ctx.fillStyle = "#F5C542";
+        ctx.beginPath();
+        ctx.moveTo(0, 28);
+        ctx.quadraticCurveTo(-18, 8, -8, -6);
+        ctx.quadraticCurveTo(-2, 4, 0, -18);
+        ctx.quadraticCurveTo(4, 2, 12, -4);
+        ctx.quadraticCurveTo(18, 10, 0, 28);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // eyes
+      let eyeStyle = character.face.eye;
+      if (expr === "happy") eyeStyle = character.id === "nezha" ? "nezha" : "happy";
+      else if (expr === "press") eyeStyle = character.id === "nezha" ? "nezha" : "cat";
+      else if (expr === "drag") eyeStyle = character.id === "nezha" ? "nezha" : "wide";
+      else eyeStyle = character.face.eye;
+
+      const blinkOpen = expr === "happy" || !character.face.blink ? 1 : state.blink;
+      drawEye(ctx, 175, 220, eyeStyle, blinkOpen, blush);
+      drawEye(ctx, 337, 220, eyeStyle, blinkOpen, blush);
+
+      // mouth
+      let mouthStyle = character.face.mouth;
+      if (expr === "press") mouthStyle = character.id === "nezha" ? "smirk" : "flat";
+      if (expr === "happy") mouthStyle = character.id === "nezha" ? "smirk" : "big-smile";
+      if (expr === "drag") mouthStyle = character.id === "nezha" ? "smirk" : "o";
+      drawMouth(ctx, 256, 310, mouthStyle, mouthOpen);
+
+      faceTex.needsUpdate = true;
+    }
+
+    // —— tint helpers ——
+    function applyTint(baseHex, attenHex) {
+      const tint = TINTS[tintIndex];
+      const c = new THREE.Color(baseHex);
+      const a = new THREE.Color(attenHex);
+      if (tint.hueShift !== undefined) {
+        const hsl = {};
+        c.getHSL(hsl);
+        c.setHSL((hsl.h + tint.hueShift + 1) % 1, hsl.s, hsl.l);
+        a.getHSL(hsl);
+        a.setHSL((hsl.h + tint.hueShift + 1) % 1, hsl.s, hsl.l);
+      }
+      if (tint.sat !== undefined) {
+        const hsl = {};
+        c.getHSL(hsl);
+        c.setHSL(hsl.h, Math.min(1, hsl.s * tint.sat), hsl.l);
+      }
+      c.multiplyScalar(tint.mul);
+      a.multiplyScalar(tint.mul);
+      state.targetColor.copy(c);
+      state.targetAtten.copy(a);
+    }
+
+    // —— UI: characters ——
+    const charRoot = document.getElementById("chars");
+    CHARACTERS.forEach((ch, i) => {
+      const btn = document.createElement("button");
+      btn.className = "char-btn" + (i === 0 ? " is-active" : "");
+      btn.dataset.id = ch.id;
+      btn.title = ch.name;
+      btn.setAttribute("aria-label", ch.name);
+      btn.innerHTML = `
+        <div class="char-face" style="background: radial-gradient(circle at 35% 30%, #fff9, ${ch.color} 50%, ${ch.color})">
+          <span class="eye l"></span><span class="eye r"></span>
+          <span class="blush l"></span><span class="blush r"></span>
+          <span class="mouth"></span>
+        </div>
+        <span class="char-name">${ch.name}</span>
+      `;
+      btn.addEventListener("click", () => selectCharacter(ch.id));
+      charRoot.appendChild(btn);
+    });
+
+    const swatchRoot = document.getElementById("swatches");
+    TINTS.forEach((t, i) => {
+      const btn = document.createElement("button");
+      btn.className = "swatch" + (i === 0 ? " is-active" : "");
+      const preview = new THREE.Color(character.color);
+      if (t.hueShift !== undefined) {
+        const hsl = {};
+        preview.getHSL(hsl);
+        preview.setHSL((hsl.h + t.hueShift + 1) % 1, hsl.s, hsl.l);
+      }
+      preview.multiplyScalar(t.mul);
+      btn.style.background = `radial-gradient(circle at 35% 30%, #fff8, #${preview.getHexString()} 50%, #${preview.getHexString()})`;
+      btn.title = t.name;
+      btn.setAttribute("aria-label", t.name);
+      btn.addEventListener("click", () => {
+        tintIndex = i;
+        swatchRoot.querySelectorAll(".swatch").forEach((el) => el.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        applyTint(character.color, character.atten);
+        say(`${character.name} · ${t.name}`);
+        hideHint();
+        state.wobbleVel += 2;
+        state.faceDirty = true;
+      });
+      swatchRoot.appendChild(btn);
+    });
+
+    function refreshSwatchColors() {
+      const btns = swatchRoot.querySelectorAll(".swatch");
+      TINTS.forEach((t, i) => {
+        const preview = new THREE.Color(character.color);
+        if (t.hueShift !== undefined) {
+          const hsl = {};
+          preview.getHSL(hsl);
+          preview.setHSL((hsl.h + t.hueShift + 1) % 1, hsl.s, hsl.l);
+        }
+        if (t.sat !== undefined) {
+          const hsl = {};
+          preview.getHSL(hsl);
+          preview.setHSL(hsl.h, Math.min(1, hsl.s * t.sat), hsl.l);
+        }
+        preview.multiplyScalar(t.mul);
+        if (btns[i]) {
+          btns[i].style.background = `radial-gradient(circle at 35% 30%, #fff8, #${preview.getHexString()} 50%, #${preview.getHexString()})`;
+        }
+      });
+    }
+
+    function selectCharacter(id) {
+      const ch = CHARACTERS.find((c) => c.id === id);
+      if (!ch) return;
+      character = ch;
+      charRoot.querySelectorAll(".char-btn").forEach((el) => {
+        el.classList.toggle("is-active", el.dataset.id === id);
+      });
+      rebuildRestShape();
+      caramelCap.visible = !!ch.caramel;
+      qiankunRing.visible = !!ch.qiankun;
+      bunL.visible = bunR.visible = !!ch.qiankun;
+      material.transmission = ch.id === "nezha" ? 0.35 : ch.caramel ? 0.4 : ch.id === "cat" ? 0.55 : 0.7;
+      material.thickness = ch.id === "nezha" ? 1.6 : 1.85;
+      material.roughness = ch.id === "nezha" ? 0.26 : ch.caramel ? 0.3 : 0.22;
+      material.clearcoat = ch.id === "nezha" ? 0.5 : 0.35;
+      applyTint(ch.color, ch.atten);
+      refreshSwatchColors();
+      setExpr("happy", 0.55);
+      say(ch.lines.idle);
+      hideHint();
+      state.wobbleVel += 3;
+      state.happyVel += 6;
+      state.faceDirty = true;
+      if (raycastSlime()) spawnJuice(hitPoint, 0.6);
+    }
+
+    // —— pointer / interaction ——
+    const raycaster = new THREE.Raycaster();
+    const pointerNdc = new THREE.Vector2();
+    const hitPoint = new THREE.Vector3();
+    const pressPointLocal = new THREE.Vector3(0, 1, 0);
+
+    function setPointerNdc(e) {
+      const rect = canvas.getBoundingClientRect();
+      pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function raycastSlime() {
+      raycaster.setFromCamera(pointerNdc, camera);
+      const hits = raycaster.intersectObject(slime, false);
+      if (hits.length) {
+        hitPoint.copy(hits[0].point);
+        slime.updateMatrixWorld();
+        const inv = new THREE.Matrix4().copy(slime.matrixWorld).invert();
+        pressPointLocal.copy(hitPoint).applyMatrix4(inv).normalize();
+        return true;
+      }
+      return false;
+    }
+
+    function spawnJuice(at, strength) {
+      if (reduceMotion) return;
+      const count = Math.min(5, Math.floor(strength * 6) + 2);
+      let spawned = 0;
+      for (const p of particles) {
+        if (spawned >= count) break;
+        if (p.life > 0) continue;
+        p.life = p.maxLife;
+        p.mesh.visible = true;
+        p.mesh.position.copy(at);
+        p.mesh.material.color.copy(state.color);
+        p.mesh.material.opacity = 0.85;
+        p.mesh.scale.setScalar(0.6 + Math.random() * 0.7);
+        p.vel.set(
+          (Math.random() - 0.5) * 2,
+          Math.random() * 1.3 + 0.4,
+          (Math.random() - 0.5) * 2
+        ).normalize().multiplyScalar(1.1 + strength * 1.8 + Math.random());
+        spawned++;
+      }
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      setPointerNdc(e);
+      state.lastPointer.set(e.clientX, e.clientY);
+      state.movedFar = false;
+      hideHint();
+      if (raycastSlime()) {
+        state.pressing = true;
+        state.pressTarget = 1;
+        state.pressCount += 1;
+        elStatCount.textContent = String(state.pressCount);
+        canvas.classList.add("is-pressing");
+        setExpr("press", 99);
+        say(character.lines.press);
+      }
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      setPointerNdc(e);
+      const dx = e.clientX - state.lastPointer.x;
+      const dy = e.clientY - state.lastPointer.y;
+      if (Math.hypot(dx, dy) > 4) state.movedFar = true;
+
+      const hit = raycastSlime();
+      state.hovering = hit;
+
+      if (state.pressing) {
+        state.dragging = state.movedFar;
+        if (state.dragging) {
+          state.dragTarget.set(dx * 0.014, -dy * 0.014, 0);
+          state.pressTarget = 0.75;
+          if (state.expr !== "drag") {
+            setExpr("drag", 99);
+            say(character.lines.drag);
+          }
+        } else if (hit) {
+          state.pressTarget = 1;
+        }
+      } else if (hit) {
+        state.leanTarget.set(pointerNdc.x * 0.12, pointerNdc.y * 0.08);
+      } else {
+        state.leanTarget.set(0, 0);
+      }
+    });
+
+    function endPress() {
+      if (!state.pressing && !state.dragging) return;
+      const wasHard = state.pressStrength > 0.45;
+      const wasDrag = state.dragging;
+      state.pressing = false;
+      state.dragging = false;
+      state.pressTarget = 0;
+      state.dragTarget.set(0, 0, 0);
+      state.wobbleVel += wasHard ? 5 + state.pressStrength * 7 : 2;
+      setExpr(wasHard ? "happy" : "idle", wasHard ? 1.1 : 0.4);
+      if (wasHard) {
+        spawnJuice(hitPoint, state.pressStrength);
+        say(wasDrag ? character.lines.drag : character.lines.release);
+      } else {
+        say(character.lines.idle);
+      }
+      canvas.classList.remove("is-pressing");
+    }
+
+    canvas.addEventListener("pointerup", endPress);
+    canvas.addEventListener("pointercancel", endPress);
+    canvas.addEventListener("pointerleave", () => {
+      state.hovering = false;
+      state.leanTarget.set(0, 0);
+    });
+
+    canvas.addEventListener("dblclick", (e) => {
+      setPointerNdc(e);
+      hideHint();
+      state.happyVel += 13;
+      state.wobbleVel += 3.5;
+      setExpr("happy", 1.4);
+      say(character.lines.happy);
+      if (raycastSlime()) spawnJuice(hitPoint, 0.85);
+    });
+
+    // —— deformation + face follow ——
+    function pseudoNoise(x, y, z, t) {
+      return Math.sin(x * 2.7 + t * 1.3) * Math.cos(y * 3.1 - t * 0.9) * Math.sin(z * 2.4 + t * 0.7);
+    }
+
+    function deformPoint(rx, ry, rz, time, out) {
+      const rl = Math.hypot(rx, ry, rz) || 1;
+      const nx = rx / rl;
+      const ny = ry / rl;
+      const nz = rz / rl;
+
+      let x = rx;
+      let y = ry;
+      let z = rz;
+
+      const pers = character.personality;
+      const squash = state.squash;
+      const sxz = 1 + squash * 0.62;
+      const sy = 1 - squash * 0.88;
+      const stretch = state.stretch;
+      const stretchLen = stretch.length();
+      const wob = Math.abs(state.wobble) * 0.045 * pers.jiggle + Math.abs(state.happyBounce) * 0.03;
+      const idleAmp = reduceMotion ? 0 : 0.008 * pers.breath;
+      const press = state.pressStrength;
+      const dentRadius = 0.85;
+      const dentDepth = 0.55;
+      const pp = pressPointLocal;
+
+      if (!reduceMotion) {
+        const breath = 1 + Math.sin(time * 1.6 + y * 1.8) * idleAmp;
+        const ripple = pseudoNoise(nx * 1.6, ny * 1.6, nz * 1.6, time * 0.7) * (0.01 + wob * 0.7);
+        x = x * breath + nx * ripple * RADIUS;
+        y = y * breath + ny * ripple * RADIUS;
+        z = z * breath + nz * ripple * RADIUS;
+      }
+
+      x *= sxz;
+      y *= sy;
+      z *= sxz;
+      y += state.happyBounce * 0.12 * pers.bounce * (0.55 + ny * 0.45);
+
+      if (press > 0.01) {
+        const dx = nx - pp.x;
+        const dy = ny - pp.y;
+        const dz = nz - pp.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < dentRadius) {
+          const t = 1 - dist / dentRadius;
+          const infl = t * t * press * dentDepth;
+          x -= nx * infl;
+          y -= ny * infl;
+          z -= nz * infl;
+        } else if (dist < dentRadius * 1.75) {
+          const mid = dentRadius * 1.28;
+          const band = 1 - Math.abs(dist - mid) / (dentRadius * 0.47);
+          if (band > 0) {
+            const infl = band * band * press * 0.07;
+            x += nx * infl;
+            y += ny * infl;
+            z += nz * infl;
+          }
+        }
+      }
+
+      if (stretchLen > 0.001) {
+        const influence = 0.55 + ny * 0.35;
+        x += stretch.x * influence;
+        y += stretch.y * influence;
+        z += stretch.z * influence;
+        y -= stretch.y * 0.15 * (1 - ny);
+      }
+
+      x += state.lean.x * (0.35 + ny * 0.2);
+      y += state.lean.y * 0.35;
+
+      out.set(x, y, z);
+      return out;
+    }
+
+    const _v = new THREE.Vector3();
+
+    function updateSlime(dt, time) {
+      // color
+      state.color.lerp(state.targetColor, 1 - Math.exp(-6 * dt));
+      state.atten.lerp(state.targetAtten, 1 - Math.exp(-6 * dt));
+      material.color.copy(state.color);
+      material.attenuationColor.copy(state.atten);
+      for (const p of particles) if (p.life > 0) p.mesh.material.color.copy(state.color);
+
+      // press spring
+      {
+        const target = state.pressTarget;
+        const k = state.pressing ? 220 : 160;
+        const c = state.pressing ? 22 : 10;
+        const acc = (target - state.pressStrength) * k - state._pressVel * c;
+        state._pressVel += acc * dt;
+        state.pressStrength += state._pressVel * dt;
+        state.pressStrength = THREE.MathUtils.clamp(state.pressStrength, 0, 1.15);
+      }
+
+      state.dragVec.lerp(state.dragTarget, 1 - Math.exp(-10 * dt));
+      state.lean.x += (state.leanTarget.x - state.lean.x) * (1 - Math.exp(-8 * dt));
+      state.lean.y += (state.leanTarget.y - state.lean.y) * (1 - Math.exp(-8 * dt));
+
+      {
+        const target = state.pressing ? state.pressStrength * 0.42 : 0;
+        const k = state.pressing ? 200 : 140;
+        const c = state.pressing ? 18 : 7.5;
+        const acc = (target - state.squash) * k - state.squashVel * c;
+        state.squashVel += acc * dt;
+        state.squash += state.squashVel * dt;
+      }
+
+      {
+        const k = state.dragging ? 180 : 120;
+        const c = state.dragging ? 16 : 6.5;
+        state.stretchVel.x += ((state.dragVec.x - state.stretch.x) * k - state.stretchVel.x * c) * dt;
+        state.stretchVel.y += ((state.dragVec.y - state.stretch.y) * k - state.stretchVel.y * c) * dt;
+        state.stretchVel.z += ((state.dragVec.z - state.stretch.z) * k - state.stretchVel.z * c) * dt;
+        state.stretch.addScaledVector(state.stretchVel, dt);
+      }
+
+      {
+        const acc = -state.wobble * 90 - state.wobbleVel * 8;
+        state.wobbleVel += acc * dt;
+        state.wobble += state.wobbleVel * dt;
+      }
+      {
+        const acc = -state.happyBounce * 120 - state.happyVel * 7;
+        state.happyVel += acc * dt;
+        state.happyBounce += state.happyVel * dt;
+      }
+
+      // blink
+      if (character.face.blink && !reduceMotion) {
+        state.nextBlink -= dt;
+        if (state.nextBlink <= 0) {
+          state.blink = 0;
+          state.faceDirty = true;
+          state.nextBlink = 2.2 + Math.random() * 3.5;
+        }
+        if (state.blink < 1) {
+          state.blink = Math.min(1, state.blink + dt * 8);
+          state.faceDirty = true;
+        }
+      }
+
+      // expression timeout
+      const nowS = performance.now() / 1000;
+      if (state.expr !== "idle" && nowS > state.exprUntil && !state.pressing) {
+        setExpr("idle", 0);
+        if (!state.hovering) say(character.lines.idle);
+      }
+
+      // deform vertices
+      const arr = posAttr.array;
+      for (let i = 0; i < vertexCount; i++) {
+        const i3 = i * 3;
+        deformPoint(restShaped[i3], restShaped[i3 + 1], restShaped[i3 + 2], time, _v);
+        arr[i3] = _v.x;
+        arr[i3 + 1] = _v.y;
+        arr[i3 + 2] = _v.z;
+      }
+      posAttr.needsUpdate = true;
+      geo.computeVertexNormals();
+
+      // caramel cap sits on deformed top
+      if (caramelCap.visible) {
+        const topS = shapeRadius(0, 1, 0, character.shape);
+        const topRestY = RADIUS * topS * 0.9;
+        deformPoint(0, topRestY, 0, time, _v);
+        // sink sphere center so the rim hugs the body top
+        _v.y -= RADIUS * 0.42;
+        slime.updateMatrixWorld();
+        caramelCap.position.copy(_v).applyMatrix4(slime.matrixWorld);
+        caramelCap.quaternion.copy(slime.quaternion);
+        const capSx = (0.95 + state.squash * 0.35) * (0.85 + topS * 0.2);
+        caramelCap.scale.set(capSx, (1 - state.squash * 0.55) * 0.85, capSx);
+      }
+
+      // 乾坤圈 follows mid body
+      if (qiankunRing.visible) {
+        deformPoint(0, -RADIUS * 0.15, 0, time, _v);
+        slime.updateMatrixWorld();
+        qiankunRing.position.copy(_v).applyMatrix4(slime.matrixWorld);
+        qiankunRing.quaternion.copy(slime.quaternion);
+        qiankunRing.rotateX(Math.PI / 2);
+        const rs = 1 + state.squash * 0.25;
+        qiankunRing.scale.set(rs, rs, 1 - state.squash * 0.4);
+      }
+
+      // hair buns sit clearly on top of the head
+      if (bunL.visible) {
+        slime.updateMatrixWorld();
+        const bunRestY = RADIUS * 1.08;
+        const bunRestX = RADIUS * 0.48;
+        deformPoint(-bunRestX, bunRestY, 0, time, _v);
+        bunL.position.copy(_v).applyMatrix4(slime.matrixWorld);
+        deformPoint(bunRestX, bunRestY, 0, time, _v);
+        bunR.position.copy(_v).applyMatrix4(slime.matrixWorld);
+        const bs = 1 - state.squash * 0.4;
+        bunL.scale.set(1 + state.squash * 0.25, bs, 1 + state.squash * 0.25);
+        bunR.scale.copy(bunL.scale);
+      }
+
+      // face follow: sit on front surface
+      const faceS = shapeRadius(0, 0.15, 1, character.shape);
+      const faceRestY = 0.14 * RADIUS * faceS;
+      const faceRestZ = RADIUS * faceS * 0.92;
+      deformPoint(0, faceRestY, faceRestZ, time, _v);
+      state.faceCenter.copy(_v);
+      faceMesh.position.copy(_v);
+      const fs = 1 - state.squash * 0.35;
+      faceMesh.scale.set(1 + state.squash * 0.4 + Math.abs(state.stretch.x) * 0.3, fs + Math.abs(state.stretch.y) * 0.35, 1);
+      faceMesh.lookAt(camera.position);
+      const towardCam = new THREE.Vector3().subVectors(camera.position, faceMesh.position).normalize();
+      faceMesh.position.addScaledVector(towardCam, 0.04);
+
+      if (state.faceDirty) {
+        drawFace();
+        state.faceDirty = false;
+      }
+
+      // shadow / lean
+      const stretchLen = state.stretch.length();
+      const shadowScale = 1 + state.squash * 0.35 + stretchLen * 0.4;
+      shadow.scale.set(shadowScale, shadowScale, 1);
+      shadow.material.opacity = 0.85 + state.squash * 0.2;
+      slime.rotation.x = -state.lean.y * 0.35;
+      slime.rotation.z = -state.lean.x * 0.25;
+      slime.position.y = state.happyBounce * 0.18;
+
+      // particles
+      for (const p of particles) {
+        if (p.life <= 0) continue;
+        p.life -= dt;
+        p.vel.y -= 4.5 * dt;
+        p.mesh.position.addScaledVector(p.vel, dt);
+        const lifeT = Math.max(p.life / p.maxLife, 0);
+        p.mesh.material.opacity = lifeT * 0.85;
+        p.mesh.scale.setScalar(0.4 + lifeT * 0.7);
+        if (p.life <= 0) p.mesh.visible = false;
+      }
+
+      elStatPress.textContent = Math.round(Math.min(state.pressStrength, 1) * 100) + "%";
+      elStatWobble.textContent = String(Math.round(Math.abs(state.wobbleVel) * 10) / 10);
+    }
+
+    // —— boot ——
+    function onResize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.position.z = w < 640 ? 6.7 : w < 900 ? 6.0 : 5.55;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener("resize", onResize);
+    onResize();
+
+    rebuildRestShape();
+    applyTint(character.color, character.atten);
+    drawFace();
+    say(character.lines.idle);
+
+    let last = performance.now();
+    function frame(now) {
+      const dt = Math.min((now - last) / 1000, 0.033);
+      last = now;
+      updateSlime(dt, now / 1000);
+      renderer.render(scene, camera);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

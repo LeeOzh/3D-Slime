@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>捏捏乐 · 角色史莱姆</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='26' fill='%23A78BFA'/%3E%3Ccircle cx='24' cy='26' r='6' fill='white' opacity='.55'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app">
+    <div id="glow"></div>
+    <canvas id="c"></canvas>
+    <div class="ui">
+      <div class="sleepy-zzz" id="sleepy-zzz" hidden aria-hidden="true">💤</div>
+      <header>
+        <div class="brand">
+          <h1>捏捏<span>乐</span></h1>
+          <p>Character · Squish · Bounce</p>
+        </div>
+        <div class="header-right">
+          <div class="badge" id="badge">选一位小伙伴，开始捏</div>
+          <button type="button" class="sound-toggle" id="sound-toggle" aria-pressed="true" title="关闭音效" aria-label="音效开关">🔊</button>
+          <button type="button" class="report-toggle" id="report-toggle" title="今日报告与图鉴" aria-label="今日报告">📊</button>
+        </div>
+      </header>
+      <footer>
+        <div class="hint" id="hint">按住捏扁 · 拖拽拉长 · 松手回弹 · 双击开心跳</div>
+        <div class="dock">
+          <div class="dock-row">
+            <span class="panel-label">角色</span>
+            <div class="chars" id="chars"></div>
+          </div>
+          <div class="dock-row">
+            <span class="panel-label">色调</span>
+            <div class="swatches" id="swatches"></div>
+          </div>
+        </div>
+        <div class="stats">
+          <span>捏压 <strong id="stat-press">0%</strong></span>
+          <span>回弹 <strong id="stat-wobble">0</strong></span>
+          <span>次数 <strong id="stat-count">0</strong></span>
+        </div>
+      </footer>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
