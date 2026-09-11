@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RADIUS } from "../core/constants";
-import { PERF, type GpuTierSettings } from "../core/perf";
+import { PERF } from "../core/perf";
 import type { CharacterDef, GameState, ShapeKind } from "../core/types";
 
 interface ShapeResult {
@@ -32,7 +32,7 @@ export class CharacterManager {
     this.rest = new Float32Array(posAttr.array as ArrayLike<number>);
     this.restShaped = new Float32Array(this.rest.length);
 
-    // Full jelly material by default. AdaptiveQuality may trim transmission later.
+    // Full jelly material — locked, no runtime quality tiers.
     const material = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(state.character.color),
       roughness: 0.22,
@@ -229,45 +229,6 @@ export class CharacterManager {
     material.clearcoat = ch.id === "nezha" ? 0.5 : 0.35;
     material.transparent = false;
     material.opacity = 1;
-    material.needsUpdate = true;
-  }
-
-  /** Called by AdaptiveQuality when FPS stays low — trims GPU cost, not mesh. */
-  applyGpuTier(settings: GpuTierSettings, character?: CharacterDef): void {
-    const material = this.material;
-    const ch = character;
-    const baseTransmission = ch
-      ? ch.id === "nezha"
-        ? 0.35
-        : ch.caramel
-          ? 0.4
-          : ch.id === "cat"
-            ? 0.55
-            : 0.7
-      : 0.72;
-    const baseClearcoat = ch?.id === "nezha" ? 0.5 : 0.35;
-
-    material.clearcoat = settings.useClearcoat ? baseClearcoat : 0;
-    material.sheen = settings.useSheen ? 0.45 : 0;
-    material.sheenRoughness = 0.55;
-
-    if (settings.useTransmission && settings.transmissionScale > 0) {
-      material.transmission = baseTransmission * settings.transmissionScale;
-      material.thickness = 1.85;
-      material.attenuationDistance = 0.9;
-      material.transparent = false;
-      material.opacity = 1;
-      material.roughness = ch?.id === "nezha" ? 0.26 : ch?.caramel ? 0.3 : 0.22;
-      material.envMapIntensity = 1;
-    } else {
-      // Keep a translucent look without the transmission multi-pass.
-      material.transmission = 0;
-      material.thickness = 0;
-      material.transparent = true;
-      material.opacity = 0.96;
-      material.roughness = 0.32;
-      material.envMapIntensity = 0.85;
-    }
     material.needsUpdate = true;
   }
 

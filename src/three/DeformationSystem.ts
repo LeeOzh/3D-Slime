@@ -351,13 +351,7 @@ export class DeformationSystem {
       activeCount > 0;
 
     if (softLive) {
-      // Live interaction still skips a frame on iOS — normals are CPU-heavy at 72².
-      if (this.normalSkip <= 0) {
-        characters.geometry.computeVertexNormals();
-        this.normalSkip = Math.max(0, PERF.liveNormalEvery - 1);
-      } else {
-        this.normalSkip -= 1;
-      }
+      characters.geometry.computeVertexNormals();
     } else if (this.normalSkip <= 0) {
       characters.geometry.computeVertexNormals();
       this.normalSkip = PERF.idleNormalEvery;

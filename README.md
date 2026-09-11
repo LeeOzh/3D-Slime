@@ -168,15 +168,16 @@ GameState {
 
 ### 性能
 
-- SoftBody 配置按角色缓存、pointer buffer 复用、活跃区域形变循环（CPU）
-- **默认高画质**：透射/清漆/光泽、DPR 2、AA、72–96 段球体
-- **自适应 GPU 档位**：连续 FPS&lt;48 才降 DPR / 透射（iOS 更快进入）
-- **iOS 专项**（iPhone 常比同级 Android 卡）：
-  - 脸部 Canvas 贴图限频（约 12fps），避免每帧 `needsUpdate` 上传
-  - 交互中法线隔帧重算
-  - transmission 会额外整屏 RT pass（Three `renderTransmissionPass`），自适应会在持续掉帧时关掉
+- **画质锁定**：手机/桌面均为 96 段球、透射/清漆/光泽、DPR 2、AA；**不**运行时自动降画质
+- CPU 侧（不改外观）：
+  - SoftBody 配置按角色缓存
+  - pointer buffer 复用
+  - 活跃压力区域形变循环（不再每顶点扫 7 区）
+  - 脸部 Canvas 限频（iOS 约 12fps 跟眼神；表情变更仍即时）
+  - 空闲时法线隔帧；交互中每帧法线
+  - 手机静止时跳过 per-vertex noise
 
-Debug：`?debug=softbody` 可看 FPS / GPU tier / draw calls。
+Debug：`?debug=softbody` 可看 FPS / draw calls / tris / segs。
 
 ### V3.1 Soft Body Pose Feedback
 
