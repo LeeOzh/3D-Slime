@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { PERF } from "../core/perf";
 
 export class RendererManager {
   readonly renderer: THREE.WebGLRenderer;
@@ -7,9 +8,12 @@ export class RendererManager {
     try {
       this.renderer = new THREE.WebGLRenderer({
         canvas,
-        antialias: true,
+        antialias: PERF.antialias,
         alpha: true,
         powerPreference: "high-performance",
+        // Mobile: avoid expensive MSAA resolve path when AA is off anyway.
+        stencil: false,
+        depth: true,
       });
     } catch (err) {
       document.body.insertAdjacentHTML(
@@ -18,7 +22,7 @@ export class RendererManager {
       );
       throw err;
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PERF.maxDpr));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -26,6 +30,7 @@ export class RendererManager {
   }
 
   resize(width: number, height: number): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PERF.maxDpr));
     this.renderer.setSize(width, height);
   }
 

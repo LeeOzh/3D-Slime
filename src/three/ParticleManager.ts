@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { PERF } from "../core/perf";
 import type { ParticleType } from "../core/types";
 
 interface Particle {
@@ -10,7 +11,7 @@ interface Particle {
   type: ParticleType;
 }
 
-const POOL_SIZE = 48;
+const POOL_SIZE = PERF.particlePool;
 
 /**
  * Pooled particles (shared geometry). Types tint motion/scale slightly.

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RADIUS } from "../core/constants";
+import { PERF } from "../core/perf";
 import type { CharacterDef, GameState, ShapeKind } from "../core/types";
 
 interface ShapeResult {
@@ -25,28 +26,32 @@ export class CharacterManager {
   readonly faceTex: THREE.CanvasTexture;
 
   constructor(scene: THREE.Scene, state: GameState) {
-    const geo = new THREE.SphereGeometry(RADIUS, 96, 96);
+    const geo = new THREE.SphereGeometry(RADIUS, PERF.sphereSegments, PERF.sphereSegments);
     const posAttr = geo.attributes.position;
     this.vertexCount = posAttr.count;
     this.rest = new Float32Array(posAttr.array as ArrayLike<number>);
     this.restShaped = new Float32Array(this.rest.length);
 
+    // Transmission + clearcoat + sheen tank mobile FPS — use a cheaper jelly look there.
     const material = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(state.character.color),
-      roughness: 0.22,
+      roughness: PERF.useTransmission ? 0.22 : 0.38,
       metalness: 0,
-      transmission: 0.72,
-      thickness: 1.85,
+      transmission: PERF.useTransmission ? 0.72 : 0,
+      thickness: PERF.useTransmission ? 1.85 : 0,
       ior: 1.36,
       attenuationColor: new THREE.Color(state.character.atten),
-      attenuationDistance: 0.9,
-      clearcoat: 0.35,
+      attenuationDistance: PERF.useTransmission ? 0.9 : 0,
+      clearcoat: PERF.useClearcoat ? 0.35 : 0,
       clearcoatRoughness: 0.35,
-      sheen: 0.45,
+      sheen: PERF.useSheen ? 0.45 : 0,
       sheenRoughness: 0.55,
       sheenColor: new THREE.Color("#ffffff"),
-      envMapIntensity: 1.0,
+      envMapIntensity: PERF.useTransmission ? 1.0 : 0.65,
       specularIntensity: 0.85,
+      // Fake translucency without transmission pass.
+      transparent: !PERF.useTransmission,
+      opacity: PERF.useTransmission ? 1 : 0.94,
     });
 
     this.slime = new THREE.Mesh(geo, material);
@@ -54,8 +59,8 @@ export class CharacterManager {
 
     const capGeo = new THREE.SphereGeometry(
       RADIUS * 1.02,
-      48,
-      32,
+      PERF.capSegments,
+      Math.max(12, PERF.capSegments * 0.65),
       0,
       Math.PI * 2,
       0,
@@ -99,7 +104,7 @@ export class CharacterManager {
     scene.add(this.bunL, this.bunR);
 
     this.faceCanvas = document.createElement("canvas");
-    this.faceCanvas.width = this.faceCanvas.height = 512;
+    this.faceCanvas.width = this.faceCanvas.height = PERF.faceCanvasSize;
     this.faceCtx = this.faceCanvas.getContext("2d")!;
     this.faceTex = new THREE.CanvasTexture(this.faceCanvas);
     this.faceTex.colorSpace = THREE.SRGBColorSpace;
@@ -221,6 +226,14 @@ export class CharacterManager {
 
   applyMaterialForCharacter(ch: CharacterDef): void {
     const material = this.material;
+    if (!PERF.useTransmission) {
+      material.transmission = 0;
+      material.thickness = 0;
+      material.roughness = ch.id === "nezha" ? 0.42 : ch.caramel ? 0.45 : 0.38;
+      material.clearcoat = 0;
+      material.needsUpdate = true;
+      return;
+    }
     material.transmission = ch.id === "nezha" ? 0.35 : ch.caramel ? 0.4 : ch.id === "cat" ? 0.55 : 0.7;
     material.thickness = ch.id === "nezha" ? 1.6 : 1.85;
     material.roughness = ch.id === "nezha" ? 0.26 : ch.caramel ? 0.3 : 0.22;

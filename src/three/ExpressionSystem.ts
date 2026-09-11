@@ -1,4 +1,5 @@
 import type { CharacterDef, ExpressionName, EyeStyle, GameState } from "../core/types";
+import { PERF } from "../core/perf";
 import { clamp, smoothstep } from "../core/utils";
 import { isEarRegion } from "../core/softBody";
 
@@ -482,7 +483,10 @@ export class ExpressionSystem {
     ctx: CanvasRenderingContext2D,
     blend: FaceBlend,
   ): void {
+    // Draw in a fixed 512 design space; canvas may be smaller on mobile.
     const S = 512;
+    const scale = PERF.faceCanvasSize / S;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, S, S);
 
     ctx.globalAlpha = blend.blush;

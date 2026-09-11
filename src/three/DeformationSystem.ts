@@ -1,15 +1,39 @@
 import * as THREE from "three";
 import { RADIUS } from "../core/constants";
+import { PERF } from "../core/perf";
 import type { GameState } from "../core/types";
-import { PRESSURE_REGIONS, REGION_DIRS } from "../core/softBody";
+import { PRESSURE_REGIONS, REGION_DIRS, type PressureRegion } from "../core/softBody";
 import { clamp, smoothstep } from "../core/utils";
 import type { CharacterManager } from "./CharacterManager";
 
 const _v = new THREE.Vector3();
 const _towardCam = new THREE.Vector3();
 
+/** Active pressure regions for the current frame (avoids 7-way scan per vertex). */
+const MAX_ACTIVE = 7;
+const activeDirX = new Float32Array(MAX_ACTIVE);
+const activeDirY = new Float32Array(MAX_ACTIVE);
+const activeDirZ = new Float32Array(MAX_ACTIVE);
+const activeP = new Float32Array(MAX_ACTIVE);
+let activeCount = 0;
+
 function pseudoNoise(x: number, y: number, z: number, t: number): number {
   return Math.sin(x * 2.7 + t * 1.3) * Math.cos(y * 3.1 - t * 0.9) * Math.sin(z * 2.4 + t * 0.7);
+}
+
+function rebuildActiveRegions(field: Record<PressureRegion, number>): void {
+  activeCount = 0;
+  for (let i = 0; i < PRESSURE_REGIONS.length; i++) {
+    const key = PRESSURE_REGIONS[i];
+    const p = field[key];
+    if (p < 0.02) continue;
+    const d = REGION_DIRS[key];
+    activeDirX[activeCount] = d.x;
+    activeDirY[activeCount] = d.y;
+    activeDirZ[activeCount] = d.z;
+    activeP[activeCount] = p;
+    activeCount++;
+  }
 }
 
 /**
@@ -59,27 +83,28 @@ export class DeformationSystem {
       ? Math.max(state.squish.pressure || 0, soft.localPressure || 0, state.pressStrength)
       : Math.max(state.pressStrength, soft.localPressure);
 
-    // Soft-body local dents from pressure field (independent regions).
-    const field = soft.pressureField;
-    const hasField =
-      field["left-cheek"] > 0.01 ||
-      field["right-cheek"] > 0.01 ||
-      field.top > 0.01 ||
-      field.belly > 0.01 ||
-      field["left-ear"] > 0.01 ||
-      field["right-ear"] > 0.01 ||
-      field.mouth > 0.01;
+    // Soft-body local dents rebuilt once per frame (see rebuildActiveRegions).
+    // activeCount drives the dent loop below.
 
     const dentRadius = 0.95;
     const dentDepth = 0.55 * (pers.squishStrength ?? 1);
     const pp = this.pressPointLocal;
 
     if (!state.reduceMotion) {
-      const breath = 1 + Math.sin(time * 1.6 + y * 1.8) * idleAmp;
-      const ripple = pseudoNoise(nx * 1.6, ny * 1.6, nz * 1.6, time * 0.7) * (0.01 + wob * 0.7);
-      x = x * breath + nx * ripple * RADIUS;
-      y = y * breath + ny * ripple * RADIUS;
-      z = z * breath + nz * ripple * RADIUS;
+      // Skip expensive per-vertex noise on mobile when nearly still.
+      const wantNoise = !PERF.isMobile || idleAmp > 0.005 || wob > 0.02 || press > 0.05;
+      if (wantNoise) {
+        const breath = 1 + Math.sin(time * 1.6 + y * 1.8) * idleAmp;
+        const ripple = pseudoNoise(nx * 1.6, ny * 1.6, nz * 1.6, time * 0.7) * (0.01 + wob * 0.7);
+        x = x * breath + nx * ripple * RADIUS;
+        y = y * breath + ny * ripple * RADIUS;
+        z = z * breath + nz * ripple * RADIUS;
+      } else if (idleAmp > 0) {
+        const breath = 1 + Math.sin(time * 1.6 + y * 1.8) * idleAmp;
+        x *= breath;
+        y *= breath;
+        z *= breath;
+      }
     }
 
     // Soft-body whole scale (pinch / stretch / release wave).
@@ -88,15 +113,14 @@ export class DeformationSystem {
     z *= soft.scale.z * sxz;
     y += state.happyBounce * 0.12 * pers.bounce * (0.55 + ny * 0.45);
 
-    // --- Multi-region pressure field deformation ---
-    if (hasField && !state.reduceMotion) {
-      for (const region of PRESSURE_REGIONS) {
-        const p = field[region];
-        if (p < 0.02) continue;
-        const dir = REGION_DIRS[region];
-        const dist = Math.sqrt(
-          (nx - dir.x) * (nx - dir.x) + (ny - dir.y) * (ny - dir.y) + (nz - dir.z) * (nz - dir.z),
-        );
+    // --- Multi-region pressure field deformation (active regions only) ---
+    if (activeCount > 0 && !state.reduceMotion) {
+      for (let ri = 0; ri < activeCount; ri++) {
+        const p = activeP[ri];
+        const dxr = nx - activeDirX[ri];
+        const dyr = ny - activeDirY[ri];
+        const dzr = nz - activeDirZ[ri];
+        const dist = Math.sqrt(dxr * dxr + dyr * dyr + dzr * dzr);
         if (dist < dentRadius) {
           const infl = smoothstep(dentRadius, 0, dist) * p * dentDepth * 0.9;
           x -= nx * infl;
@@ -118,7 +142,7 @@ export class DeformationSystem {
     }
 
     // --- Legacy single-point dent (kept for V2 feel while pressing) ---
-    if (press > 0.01 && !hasField) {
+    if (press > 0.01 && activeCount === 0) {
       const dx = nx - pp.x;
       const dy = ny - pp.y;
       const dz = nz - pp.z;
@@ -300,6 +324,8 @@ export class DeformationSystem {
     time: number,
     camera: THREE.Camera,
   ): void {
+    rebuildActiveRegions(state.softBody.pressureField);
+
     const posAttr = characters.positionAttr;
     const arr = posAttr.array as Float32Array;
     const restShaped = characters.restShaped;
@@ -313,7 +339,7 @@ export class DeformationSystem {
       arr[i3 + 2] = _v.z;
     }
     posAttr.needsUpdate = true;
-    // 96×96 sphere: skip normals every other frame when barely deforming.
+
     const softLive =
       state.pressing ||
       Math.abs(state.wobble) > 0.02 ||
@@ -321,10 +347,15 @@ export class DeformationSystem {
       state.softBody.stretchAmount > 0.02 ||
       Math.abs(state.softBody.releaseEnergy) > 0.03 ||
       Math.abs(state.softBody.pinchStrength) > 0.03 ||
-      state.softBody.petWave > 0.02;
-    if (softLive || this.normalSkip <= 0) {
+      state.softBody.petWave > 0.02 ||
+      activeCount > 0;
+
+    if (softLive) {
+      this.normalSkip = 0;
       characters.geometry.computeVertexNormals();
-      this.normalSkip = softLive ? 0 : 1;
+    } else if (this.normalSkip <= 0) {
+      characters.geometry.computeVertexNormals();
+      this.normalSkip = PERF.idleNormalEvery;
     } else {
       this.normalSkip -= 1;
     }
