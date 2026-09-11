@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RADIUS } from "../core/constants";
 import { PERF } from "../core/perf";
 import type { CharacterDef, GameState, ShapeKind } from "../core/types";
+import { createBodyTexture, disposeTexture } from "./BodyTexture";
 
 interface ShapeResult {
   sxz: number;
@@ -26,6 +27,7 @@ export class CharacterManager {
   private readonly faceCanvas: HTMLCanvasElement;
   private readonly faceCtx: CanvasRenderingContext2D;
   readonly faceTex: THREE.CanvasTexture;
+  private bodyTex: THREE.CanvasTexture | null = null;
 
   constructor(scene: THREE.Scene, state: GameState) {
     const geo = new THREE.SphereGeometry(RADIUS, PERF.sphereSegments, PERF.sphereSegments);
@@ -53,6 +55,8 @@ export class CharacterManager {
       envMapIntensity: 1.0,
       specularIntensity: 0.85,
     });
+    this.bodyTex = createBodyTexture(state.character.id);
+    material.map = this.bodyTex;
 
     this.slime = new THREE.Mesh(geo, material);
     scene.add(this.slime);
@@ -236,6 +240,9 @@ export class CharacterManager {
     material.clearcoat = ch.id === "nezha" ? 0.5 : 0.35;
     material.transparent = false;
     material.opacity = 1;
+    disposeTexture(this.bodyTex);
+    this.bodyTex = createBodyTexture(ch.id);
+    material.map = this.bodyTex;
     material.needsUpdate = true;
   }
 
