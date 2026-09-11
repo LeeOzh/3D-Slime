@@ -70,6 +70,8 @@ interface DeformFrame {
   earGrabSide: number;
   lockSide: number;
   lockEar: number;
+  lockTop: boolean;
+  lockBelly: boolean;
   leanX: number;
   leanY: number;
   happyBounce: number;
@@ -136,6 +138,8 @@ function buildFrame(state: GameState, time: number): DeformFrame {
     earGrabSide: soft.earGrabSide,
     lockSide,
     lockEar,
+    lockTop: lock === "top",
+    lockBelly: lock === "belly",
     leanX: state.lean.x,
     leanY: state.lean.y,
     happyBounce: state.happyBounce,
@@ -272,6 +276,8 @@ export class DeformationSystem {
       let influence = 0.55 + ny * 0.35;
       if (f.lockSide < 0) influence *= clamp(0.55 - nx * 0.9, 0.15, 1.2);
       else if (f.lockSide > 0) influence *= clamp(0.55 + nx * 0.9, 0.15, 1.2);
+      else if (f.lockTop) influence *= smoothstep(-0.2, 0.9, ny);
+      else if (f.lockBelly) influence *= smoothstep(0.3, -0.7, ny);
       x += f.softStretchX * influence * 0.85;
       y += f.softStretchY * influence * 0.85;
       if (f.lockSide < 0) x += f.softStretchX * 0.12 * clamp(nx, 0, 1);

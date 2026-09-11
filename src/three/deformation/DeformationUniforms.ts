@@ -33,6 +33,9 @@ export interface SlimeUniforms {
   uEarGrabSide: { value: number };
   uLockEar: { value: number };
   uLockSide: { value: number };
+  /** 0 none, 1 left, 2 right, 3 top, 4 belly */
+  uLockRegion: { value: number };
+  uMaxFieldP: { value: number };
   uLean: { value: THREE.Vector2 };
   uSleepy: { value: number };
   uReduceMotion: { value: number };
@@ -74,6 +77,8 @@ export function createSlimeUniforms(): SlimeUniforms {
     uEarGrabSide: { value: 0 },
     uLockEar: { value: 0 },
     uLockSide: { value: 0 },
+    uLockRegion: { value: 0 },
+    uMaxFieldP: { value: 0 },
     uLean: { value: new THREE.Vector2() },
     uSleepy: { value: 0 },
     uReduceMotion: { value: 0 },
@@ -142,17 +147,29 @@ export function syncSlimeUniforms(
       : lock === "right-cheek" || lock === "right-ear"
         ? 1
         : 0;
-  u.uLean.value.copy(state.lean);
-  u.uSleepy.value = state.sleepy && !state.pressing ? 1 : 0;
-  u.uReduceMotion.value = state.reduceMotion ? 1 : 0;
-  u.uWantNoise.value = wantNoise ? 1 : 0;
-
+  u.uLockRegion.value =
+    lock === "left-cheek" || lock === "left-ear"
+      ? 1
+      : lock === "right-cheek" || lock === "right-ear"
+        ? 2
+        : lock === "top"
+          ? 3
+          : lock === "belly"
+            ? 4
+            : 0;
+  let maxP = 0;
   for (let i = 0; i < 7; i++) {
     const key = PRESSURE_REGIONS[i];
     const p = soft.pressureField[key];
     const d = REGION_DIRS[key];
     u.uPressure.value[i].set(d.x, d.y, d.z, p);
+    if (p > maxP) maxP = p;
   }
+  u.uMaxFieldP.value = maxP;
+  u.uLean.value.copy(state.lean);
+  u.uSleepy.value = state.sleepy && !state.pressing ? 1 : 0;
+  u.uReduceMotion.value = state.reduceMotion ? 1 : 0;
+  u.uWantNoise.value = wantNoise ? 1 : 0;
 }
 
 function isCoarseMobile(): boolean {

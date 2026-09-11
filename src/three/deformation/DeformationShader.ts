@@ -33,14 +33,17 @@ uniform vec2 uEarStretch;
 uniform float uEarGrabSide;
 uniform float uLockEar;
 uniform float uLockSide;
+/** 0 none, 1 left, 2 right, 3 top, 4 belly */
+uniform float uLockRegion;
 uniform vec2 uLean;
 uniform float uSleepy;
 uniform float uReduceMotion;
 uniform float uWantNoise;
+uniform float uMaxFieldP;
 uniform vec4 uPressure[7];
 
 float slimeSstep(float e0, float e1, float x) {
-  float t = clamp((x - e0) / (e1 - e0 + 1e-6), 0.0, 1.0);
+  float t = clamp((x - e0) / ((e1 - e0) + sign(e1 - e0) * 1e-6), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
 
@@ -73,7 +76,7 @@ vec3 slimeDeform(vec3 rp) {
   p.z *= uScale.z * uSxz;
   p.y += uHappyBounce * 0.12 * uBounce * (0.55 + n.y * 0.45);
 
-  // Pressure field (all 7; inactive have w≈0)
+  // Pressure field
   for (int i = 0; i < 7; i++) {
     float pr = uPressure[i].w;
     if (pr < 0.02) continue;
@@ -86,17 +89,13 @@ vec3 slimeDeform(vec3 rp) {
     float mid = uDentRadius * 1.25;
     float band = 1.0 - slimeSstep(0.0, uDentRadius * 0.55, abs(dist - mid));
     if (dist < uDentRadius * 1.7 && band > 0.0) {
-      float infl = band * pr * 0.09;
-      p += n * infl;
+      p += n * (band * pr * 0.09);
     }
   }
 
-  // Single-point dent when no field pressure
-  float maxField = 0.0;
-  for (int i = 0; i < 7; i++) maxField = max(maxField, uPressure[i].w);
   if (uPress > 0.01) {
     float dist = length(n - uPressPoint);
-    if (maxField < 0.02) {
+    if (uMaxFieldP < 0.02) {
       if (dist < uDentRadius) {
         float infl = slimeSstep(uDentRadius, 0.0, dist) * uPress * uDentDepth;
         p -= n * infl;
@@ -112,21 +111,24 @@ vec3 slimeDeform(vec3 rp) {
     }
   }
 
-  // Soft stretch smear
+  // Soft stretch smear (match CPU lock: left / right / top / belly)
   if (uStretchAmount > 0.01) {
     float influence = 0.55 + n.y * 0.35;
-    if (uLockSide < -0.5) {
+    if (uLockRegion > 0.5 && uLockRegion < 1.5) {
       influence *= slimeClamp(0.55 - n.x * 0.9, 0.15, 1.2);
-    } else if (uLockSide > 0.5) {
+    } else if (uLockRegion > 1.5 && uLockRegion < 2.5) {
       influence *= slimeClamp(0.55 + n.x * 0.9, 0.15, 1.2);
+    } else if (uLockRegion > 2.5 && uLockRegion < 3.5) {
+      influence *= slimeSstep(-0.2, 0.9, n.y);
+    } else if (uLockRegion > 3.5) {
+      influence *= slimeSstep(0.3, -0.7, n.y);
     }
     p.x += uStretch.x * influence * 0.85;
     p.y += uStretch.y * influence * 0.85;
-    if (uLockSide < -0.5) p.x += uStretch.x * 0.12 * slimeClamp(n.x, 0.0, 1.0);
-    if (uLockSide > 0.5) p.x += uStretch.x * 0.12 * slimeClamp(-n.x, 0.0, 1.0);
+    if (uLockRegion > 0.5 && uLockRegion < 1.5) p.x += uStretch.x * 0.12 * slimeClamp(n.x, 0.0, 1.0);
+    if (uLockRegion > 1.5 && uLockRegion < 2.5) p.x += uStretch.x * 0.12 * slimeClamp(-n.x, 0.0, 1.0);
   }
 
-  // Legacy lateral rub
   if (uDragging > 0.5 && uStretchLegacyLen > 0.002 && uStretchAmount < 0.05 && uPress > 0.01) {
     float dist = length(n - uPressPoint);
     float rub = slimeSstep(uDentRadius, 0.0, dist) * uPress * 0.35;
@@ -208,7 +210,7 @@ vec3 slimeDeform(vec3 rp) {
 `;
 
 export const SLIME_BEGIN_NORMAL = /* glsl */ `
-vec3 objectNormal = slimeDeformedNormal( position );
+vec3 objectNormal = slimeDeformedNormal( position, normal );
 #ifdef USE_TANGENT
   vec3 objectTangent = vec3( tangent.xyz );
 #endif
@@ -218,24 +220,51 @@ export const SLIME_BEGIN_VERTEX = /* glsl */ `
 vec3 transformed = slimeDeform( position );
 `;
 
-/** Finite-difference normal from the same deform function. */
+/**
+ * Finite-difference normal from slimeDeform, blended with rest mesh normals
+ * so ear bumps / silhouette match CPU computeVertexNormals more closely.
+ */
 export const SLIME_NORMAL_FN = /* glsl */ `
-vec3 slimeDeformedNormal( vec3 rp ) {
-  float rl = max(length(rp), 1e-5);
-  vec3 n = rp / rl;
-  vec3 up = abs(n.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-  vec3 t = normalize(cross(up, n));
-  vec3 b = cross(n, t);
-  float eps = 0.035;
+vec3 slimeDeformedNormal( vec3 rp, vec3 restN ) {
+  vec3 n = normalize( rp );
+  vec3 rn = normalize( restN );
+
+  float deformAmt =
+    uPress +
+    uStretchAmount +
+    uMaxFieldP +
+    uReleaseEnergy +
+    uPetStrength +
+    abs( uSideComp ) +
+    abs( uEarStretch.x ) + abs( uEarStretch.y ) +
+    abs( uEarLag.x ) + abs( uEarLag.y ) +
+    abs( uHeadLag.x ) + abs( uHeadLag.y ) +
+    abs( uWobble ) * 0.5;
+
+  // Idle / tiny deform: keep mesh rest normals (cat ears, nezha bumps).
+  if ( deformAmt < 0.015 ) {
+    return rn;
+  }
+
+  float rl = max( length( rp ), 1e-5 );
+  vec3 up = abs( n.y ) < 0.95 ? vec3( 0.0, 1.0, 0.0 ) : vec3( 1.0, 0.0, 0.0 );
+  vec3 t = normalize( cross( up, n ) );
+  vec3 b = normalize( cross( n, t ) );
+  // Scale-aware epsilon — large enough for stability, small enough for dent falloff.
+  float eps = 0.018 * max( rl, 0.35 );
   vec3 p0 = slimeDeform( rp );
   vec3 p1 = slimeDeform( rp + t * eps );
   vec3 p2 = slimeDeform( rp + b * eps );
   vec3 nr = cross( p1 - p0, p2 - p0 );
-  float len = length(nr);
-  if (len < 1e-8) return n;
+  float len = length( nr );
+  if ( len < 1e-10 ) {
+    return rn;
+  }
   nr /= len;
-  // Keep outward-ish orientation
-  if (dot(nr, n) < 0.0) nr = -nr;
-  return nr;
+  if ( dot( nr, n ) < 0.0 ) nr = -nr;
+
+  // Blend toward rest mesh normal so non-spherical bumps stay consistent.
+  float k = clamp( deformAmt * 2.5, 0.35, 0.85 );
+  return normalize( mix( rn, nr, k ) );
 }
 `;
