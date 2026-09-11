@@ -602,3 +602,99 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   .combo-indicator.is-pop { animation: none; opacity: 0.9; scale: 1; }
 }
+
+/* Walk mode */
+.scenes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.scene-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scene-btn.is-active {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 2px rgba(255, 107, 157, 0.25);
+}
+
+.scene-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.mode-tag {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.2);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.walk-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.walk-exit {
+  pointer-events: auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.walk-pad {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(2, 40px);
+  gap: 4px;
+}
+
+.walk-pad button {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.walk-pad button[data-dir="up"] { grid-column: 2; grid-row: 1; }
+.walk-pad button[data-dir="left"] { grid-column: 1; grid-row: 2; }
+.walk-pad button[data-dir="down"] { grid-column: 2; grid-row: 2; }
+.walk-pad button[data-dir="right"] { grid-column: 3; grid-row: 2; }
+
+body.is-walk .walk-only { display: flex; }
+body.is-walk #glow { opacity: 0.25; }
+body:not(.is-walk) .walk-only { display: none !important; }
+

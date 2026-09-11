@@ -33,6 +33,10 @@ import { IdleSystem } from "./game/IdleSystem";
 import { DynamicCopy } from "./ui/DynamicCopy";
 import { ToastHost } from "./ui/ToastHost";
 import { StorageManager } from "./storage/StorageManager";
+import { WalkStage } from "./three/walk/WalkStage";
+import { WalkController } from "./three/walk/WalkController";
+import { ScenePanel } from "./ui/ScenePanel";
+import { WALK_SCENES, type StageMode, type WalkSceneId } from "./game/walkTypes";
 
 function showError(message: string): void {
   document.body.insertAdjacentHTML(
@@ -138,6 +142,138 @@ function bootstrap(): void {
   const cameraFeedback = new CameraFeedback();
   const softBodySys = new SoftBodySystem();
   softBodySys.resolveConfig(character);
+
+  // --- Walk mode ---
+  let stageMode: StageMode = "squish";
+  let walkSceneId: WalkSceneId = "meadow";
+  const walkStage = new WalkStage(sceneManager.scene);
+  const walkCtrl = new WalkController();
+  const modeTag = document.getElementById("mode-tag");
+  const sceneRow = document.getElementById("scene-row");
+  const walkBar = document.getElementById("walk-bar");
+  const walkExit = document.getElementById("walk-exit");
+  const walkPad = document.getElementById("walk-pad");
+  const restCamPos = new THREE.Vector3(0, 0.12, cameraManager.restZ);
+  const walkCamPos = new THREE.Vector3(0, 5.2, 7.5);
+  const walkCamLook = new THREE.Vector3();
+
+  function setWalkUi(on: boolean): void {
+    document.body.classList.toggle("is-walk", on);
+    if (sceneRow) sceneRow.hidden = !on;
+    if (walkBar) walkBar.hidden = !on;
+    if (modeTag) modeTag.textContent = on ? "散步" : "捏捏";
+  }
+
+  function enterWalk(): void {
+    if (stageMode === "walk") return;
+    stageMode = "walk";
+    walkStage.ensure(walkSceneId);
+    walkStage.setEnabled(true);
+    walkCtrl.enabled = true;
+    walkCtrl.resetToOrigin();
+    characters.slime.position.set(0, 0, 0);
+    characters.slime.rotation.y = 0;
+    sceneManager.shadowMesh.position.set(0, -1.4, 0);
+    restCamPos.copy(cameraManager.camera.position);
+    setWalkUi(true);
+    badge.say("方向键 / 左下摇杆走路");
+    idleSys.markInteraction();
+    sound.playSpecial("character");
+  }
+
+  function exitWalk(): void {
+    if (stageMode === "squish") return;
+    stageMode = "squish";
+    walkCtrl.enabled = false;
+    walkStage.setEnabled(false);
+    characters.slime.position.set(0, 0, 0);
+    characters.slime.rotation.set(0, 0, 0);
+    sceneManager.shadowMesh.position.set(0, -1.4, 0);
+    cameraManager.camera.position.copy(restCamPos);
+    cameraManager.camera.lookAt(0, 0, 0);
+    setWalkUi(false);
+    badge.say("回来捏捏啦");
+    idleSys.markInteraction();
+  }
+
+  function selectWalkScene(id: WalkSceneId): void {
+    walkSceneId = id;
+    if (stageMode === "walk") {
+      walkStage.ensure(id);
+      walkCtrl.resetToOrigin();
+    }
+    scenePanel?.setActive(id);
+    const def = WALK_SCENES.find((s) => s.id === id);
+    if (def) badge.say(`场景 · ${def.name}`);
+  }
+
+  let scenePanel: ScenePanel | null = null;
+  const scenesRoot = document.getElementById("scenes");
+  if (scenesRoot) {
+    scenePanel = new ScenePanel(scenesRoot, selectWalkScene, walkSceneId);
+  }
+
+  walkExit?.addEventListener("click", () => exitWalk());
+
+  // Virtual d-pad
+  if (walkPad) {
+    const map: Record<string, [number, number]> = {
+      up: [0, -1],
+      down: [0, 1],
+      left: [-1, 0],
+      right: [1, 0],
+    };
+    const dirs = new Map<string, [number, number]>();
+    const applyStick = () => {
+      let x = 0;
+      let y = 0;
+      for (const [dx, dy] of dirs.values()) {
+        x += dx;
+        y += dy;
+      }
+      walkCtrl.setStick(x, y);
+    };
+    walkPad.querySelectorAll<HTMLButtonElement>("button[data-dir]").forEach((btn) => {
+      const dir = btn.dataset.dir || "";
+      const down = (e: Event) => {
+        e.preventDefault();
+        if (!map[dir]) return;
+        dirs.set(dir, map[dir]);
+        if (stageMode !== "walk") enterWalk();
+        applyStick();
+      };
+      const up = (e: Event) => {
+        e.preventDefault();
+        dirs.delete(dir);
+        applyStick();
+      };
+      btn.addEventListener("pointerdown", down);
+      btn.addEventListener("pointerup", up);
+      btn.addEventListener("pointerleave", up);
+      btn.addEventListener("pointercancel", up);
+    });
+  }
+
+  window.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (k === "Escape" && stageMode === "walk") {
+      exitWalk();
+      return;
+    }
+    if (
+      k === "ArrowUp" ||
+      k === "ArrowDown" ||
+      k === "ArrowLeft" ||
+      k === "ArrowRight" ||
+      k === "w" ||
+      k === "a" ||
+      k === "s" ||
+      k === "d"
+    ) {
+      if (stageMode !== "walk") enterWalk();
+    }
+  });
+
 
   const settings0 = storage.getSettings();
   sound.setEnabled(settings0.soundEnabled);
@@ -339,10 +475,29 @@ function bootstrap(): void {
     motion.update(dt, state, state.character);
     deformation.update(characters, state, time, cameraManager.camera);
     motion.applyToMesh(characters.slime, sceneManager.shadowMesh, state);
+
+    if (stageMode === "walk") {
+      walkCtrl.update(dt, state, walkStage.bounds, walkStage.groundY);
+      walkCtrl.applyToMesh(characters.slime);
+      // Shadow follows character
+      sceneManager.shadowMesh.position.x = walkCtrl.position.x;
+      sceneManager.shadowMesh.position.z = walkCtrl.position.z;
+      // Follow camera
+      const cx = walkCtrl.position.x * 0.85;
+      const cz = walkCtrl.position.z * 0.85 + 6.2;
+      walkCamPos.set(cx, 4.8, cz);
+      cameraManager.camera.position.lerp(walkCamPos, 1 - Math.exp(-4 * dt));
+      walkCamLook.set(walkCtrl.position.x, 0.7, walkCtrl.position.z);
+      cameraManager.camera.lookAt(walkCamLook);
+    } else {
+      sceneManager.shadowMesh.position.x = 0;
+      sceneManager.shadowMesh.position.z = 0;
+    }
+
     expressions.applyPressureExpression(state);
     expressions.update(state, state.character, characters.faceContext, characters.faceTex);
     // Dynamic badge owns idle / rest / sleepy copy.
-    if (!state.pressing) {
+    if (!state.pressing && stageMode !== "walk") {
       const line = dynamicCopy.sample({
         pressing: state.pressing,
         pressure: state.squish.pressure,
@@ -358,7 +513,9 @@ function bootstrap(): void {
     particles.update(dt, state.color);
     characters.material.color.copy(state.color);
     characters.material.attenuationColor.copy(state.atten);
-    cameraFeedback.update(dt, cameraManager.camera);
+    if (stageMode !== "walk") {
+      cameraFeedback.update(dt, cameraManager.camera);
+    }
     statsUi.setPress(Math.max(state.pressStrength, state.softBody.localPressure));
     statsUi.setWobble(state.wobbleVel);
     if (debugEl) {
@@ -393,6 +550,7 @@ function bootstrap(): void {
         `FPS: ${softBodySys.getFps().toFixed(0)}  iOS: ${PERF.isIOS ? "Y" : "n"}  segs: ${PERF.sphereSegments}`,
         `Draws: ${renderer.renderer.info.render.calls}  tris: ${renderer.renderer.info.render.triangles}`,
         `Deform: ${deformation.isGpu ? "GPU" : "CPU"}  segs: ${PERF.sphereSegments}`,
+        `Stage: ${stageMode}  scene: ${walkSceneId}`,
         "---------------------",
       ].join("\n");
     }

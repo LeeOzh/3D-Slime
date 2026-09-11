@@ -24,7 +24,7 @@
         </div>
       </header>
       <footer>
-        <div class="hint" id="hint">按住捏扁 · 拖脸拉伸 · 双指捏合 · 松手回弹 · 双击开心跳</div>
+        <div class="hint" id="hint">按住捏扁 · 拖脸拉伸 · 双指捏合 · 按方向键走路 · 双击开心跳</div>
         <div class="dock">
           <div class="dock-row">
             <span class="panel-label">角色</span>
@@ -34,11 +34,25 @@
             <span class="panel-label">色调</span>
             <div class="swatches" id="swatches"></div>
           </div>
+          <div class="dock-row walk-only" id="scene-row" hidden>
+            <span class="panel-label">场景</span>
+            <div class="scenes" id="scenes"></div>
+          </div>
+        </div>
+        <div class="walk-bar walk-only" id="walk-bar" hidden>
+          <button type="button" id="walk-exit" class="walk-exit">返回捏捏</button>
+          <div class="walk-pad" id="walk-pad" aria-label="虚拟方向键">
+            <button type="button" data-dir="up" aria-label="上">↑</button>
+            <button type="button" data-dir="left" aria-label="左">←</button>
+            <button type="button" data-dir="down" aria-label="下">↓</button>
+            <button type="button" data-dir="right" aria-label="右">→</button>
+          </div>
         </div>
         <div class="stats">
           <span>捏压 <strong id="stat-press">0%</strong></span>
           <span>回弹 <strong id="stat-wobble">0</strong></span>
           <span>次数 <strong id="stat-count">0</strong></span>
+          <span class="mode-tag" id="mode-tag">捏捏</span>
         </div>
       </footer>
     </div>
