@@ -3,6 +3,7 @@ import { PERF } from "../core/perf";
 
 export class RendererManager {
   readonly renderer: THREE.WebGLRenderer;
+  private maxDpr = PERF.maxDpr;
 
   constructor(canvas: HTMLCanvasElement) {
     try {
@@ -11,7 +12,6 @@ export class RendererManager {
         antialias: PERF.antialias,
         alpha: true,
         powerPreference: "high-performance",
-        // Mobile: avoid expensive MSAA resolve path when AA is off anyway.
         stencil: false,
         depth: true,
       });
@@ -22,15 +22,22 @@ export class RendererManager {
       );
       throw err;
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PERF.maxDpr));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
   }
 
+  /** Adaptive quality may lower DPR without recreating the GL context. */
+  setMaxDpr(dpr: number): void {
+    this.maxDpr = dpr;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dpr));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
   resize(width: number, height: number): void {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PERF.maxDpr));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.setSize(width, height);
   }
 

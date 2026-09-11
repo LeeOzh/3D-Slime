@@ -168,12 +168,12 @@ GameState {
 
 ### 性能
 
-- SoftBody 配置按角色缓存，避免每帧 `resolve*`
-- pointer 列表复用 buffer
-- **移动端**：球体 48 段、DPR≤1.35、关 transmission/clearcoat/sheen、粒子池缩小、脸纹理 256、空闲法线隔 3 帧、静止跳过 per-vertex noise
-- 桌面仍用 96 段 + 物理透射
+- SoftBody 配置按角色缓存、pointer buffer 复用、活跃区域形变循环（CPU）
+- **默认高画质**：透射/清漆/光泽、DPR 2、AA、72–96 段球体
+- **自适应 GPU 档位**：仅当连续约 2s FPS&lt;48 才降 DPR / 透射；不靠「一上来就糊」换帧率
+- 手机球体 72 段（比 96 略省，轮廓仍圆）
 
-Debug：`?debug=softbody` 含 Mood / glance / boredom / yawn / Pet。
+Debug：`?debug=softbody` 可看 FPS 与 GPU tier。
 
 ### V3.1 Soft Body Pose Feedback
 

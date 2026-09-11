@@ -4,6 +4,7 @@ import { CHARACTERS, TINTS } from "./core/constants";
 import { eventBus } from "./core/EventBus";
 import type { CharacterDef, GameState } from "./core/types";
 import { createSoftBodyState } from "./core/softBody";
+import { AdaptiveQuality, gpuTierSettings } from "./core/perf";
 import { AnimationLoop } from "./three/AnimationLoop";
 import { CameraFeedback } from "./three/CameraFeedback";
 import { CameraManager } from "./three/CameraManager";
@@ -137,6 +138,13 @@ function bootstrap(): void {
   const cameraFeedback = new CameraFeedback();
   const softBodySys = new SoftBodySystem();
   softBodySys.resolveConfig(character);
+  const adaptive = new AdaptiveQuality((tier, settings) => {
+    renderer.setMaxDpr(settings.maxDpr);
+    characters.applyGpuTier(settings, state.character);
+    if (tier === 2) {
+      // last-resort tier — optional breadcrumb only in debug
+    }
+  });
 
   const settings0 = storage.getSettings();
   sound.setEnabled(settings0.soundEnabled);
@@ -195,6 +203,9 @@ function bootstrap(): void {
     characters.rebuildRestShape(state);
     characters.setExtrasVisible(ch);
     characters.applyMaterialForCharacter(ch);
+    if (adaptive.currentTier > 0) {
+      characters.applyGpuTier(gpuTierSettings(adaptive.currentTier), ch);
+    }
     applyTint(state, ch.color, ch.atten, state.tintIndex, TINTS);
     colorPanel.refresh(ch);
     expressions.setExpression(state, "happy", 0.55);
@@ -332,6 +343,7 @@ function bootstrap(): void {
     comboMgr.update();
     state.combo = comboMgr.count;
     state.comboLevel = comboMgr.level;
+    adaptive.update(dt);
     idleSys.update(dt);
     // Soft-body physics runs after input, before deformation.
     softBodySys.update(state, squish.getPointerList(), dt);
@@ -389,7 +401,7 @@ function bootstrap(): void {
         `Velocity:`,
         `  X ${rot.velX.toFixed(2)}  Y ${rot.velY.toFixed(2)}  Z ${rot.velZ.toFixed(2)}`,
         `Pointers: ${squish.getPointerList().length}`,
-        `FPS: ${softBodySys.getFps().toFixed(0)}`,
+        `FPS: ${softBodySys.getFps().toFixed(0)}  GPU tier: ${adaptive.currentTier}`,
         "---------------------",
       ].join("\n");
     }

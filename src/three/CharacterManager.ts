@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RADIUS } from "../core/constants";
-import { PERF } from "../core/perf";
+import { PERF, type GpuTierSettings } from "../core/perf";
 import type { CharacterDef, GameState, ShapeKind } from "../core/types";
 
 interface ShapeResult {
@@ -32,26 +32,23 @@ export class CharacterManager {
     this.rest = new Float32Array(posAttr.array as ArrayLike<number>);
     this.restShaped = new Float32Array(this.rest.length);
 
-    // Transmission + clearcoat + sheen tank mobile FPS — use a cheaper jelly look there.
+    // Full jelly material by default. AdaptiveQuality may trim transmission later.
     const material = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(state.character.color),
-      roughness: PERF.useTransmission ? 0.22 : 0.38,
+      roughness: 0.22,
       metalness: 0,
-      transmission: PERF.useTransmission ? 0.72 : 0,
-      thickness: PERF.useTransmission ? 1.85 : 0,
+      transmission: 0.72,
+      thickness: 1.85,
       ior: 1.36,
       attenuationColor: new THREE.Color(state.character.atten),
-      attenuationDistance: PERF.useTransmission ? 0.9 : 0,
-      clearcoat: PERF.useClearcoat ? 0.35 : 0,
+      attenuationDistance: 0.9,
+      clearcoat: 0.35,
       clearcoatRoughness: 0.35,
-      sheen: PERF.useSheen ? 0.45 : 0,
+      sheen: 0.45,
       sheenRoughness: 0.55,
       sheenColor: new THREE.Color("#ffffff"),
-      envMapIntensity: PERF.useTransmission ? 1.0 : 0.65,
+      envMapIntensity: 1.0,
       specularIntensity: 0.85,
-      // Fake translucency without transmission pass.
-      transparent: !PERF.useTransmission,
-      opacity: PERF.useTransmission ? 1 : 0.94,
     });
 
     this.slime = new THREE.Mesh(geo, material);
@@ -226,18 +223,52 @@ export class CharacterManager {
 
   applyMaterialForCharacter(ch: CharacterDef): void {
     const material = this.material;
-    if (!PERF.useTransmission) {
-      material.transmission = 0;
-      material.thickness = 0;
-      material.roughness = ch.id === "nezha" ? 0.42 : ch.caramel ? 0.45 : 0.38;
-      material.clearcoat = 0;
-      material.needsUpdate = true;
-      return;
-    }
     material.transmission = ch.id === "nezha" ? 0.35 : ch.caramel ? 0.4 : ch.id === "cat" ? 0.55 : 0.7;
     material.thickness = ch.id === "nezha" ? 1.6 : 1.85;
     material.roughness = ch.id === "nezha" ? 0.26 : ch.caramel ? 0.3 : 0.22;
     material.clearcoat = ch.id === "nezha" ? 0.5 : 0.35;
+    material.transparent = false;
+    material.opacity = 1;
+    material.needsUpdate = true;
+  }
+
+  /** Called by AdaptiveQuality when FPS stays low — trims GPU cost, not mesh. */
+  applyGpuTier(settings: GpuTierSettings, character?: CharacterDef): void {
+    const material = this.material;
+    const ch = character;
+    const baseTransmission = ch
+      ? ch.id === "nezha"
+        ? 0.35
+        : ch.caramel
+          ? 0.4
+          : ch.id === "cat"
+            ? 0.55
+            : 0.7
+      : 0.72;
+    const baseClearcoat = ch?.id === "nezha" ? 0.5 : 0.35;
+
+    material.clearcoat = settings.useClearcoat ? baseClearcoat : 0;
+    material.sheen = settings.useSheen ? 0.45 : 0;
+    material.sheenRoughness = 0.55;
+
+    if (settings.useTransmission && settings.transmissionScale > 0) {
+      material.transmission = baseTransmission * settings.transmissionScale;
+      material.thickness = 1.85;
+      material.attenuationDistance = 0.9;
+      material.transparent = false;
+      material.opacity = 1;
+      material.roughness = ch?.id === "nezha" ? 0.26 : ch?.caramel ? 0.3 : 0.22;
+      material.envMapIntensity = 1;
+    } else {
+      // Keep a translucent look without the transmission multi-pass.
+      material.transmission = 0;
+      material.thickness = 0;
+      material.transparent = true;
+      material.opacity = 0.96;
+      material.roughness = 0.32;
+      material.envMapIntensity = 0.85;
+    }
+    material.needsUpdate = true;
   }
 
   setExtrasVisible(ch: CharacterDef): void {
