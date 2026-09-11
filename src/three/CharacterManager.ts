@@ -19,6 +19,8 @@ export class CharacterManager {
 
   readonly rest: Float32Array;
   readonly restShaped: Float32Array;
+  /** Cached unit directions of restShaped — rebuilt with shape. */
+  readonly restDir: Float32Array;
   readonly vertexCount: number;
 
   private readonly faceCanvas: HTMLCanvasElement;
@@ -31,6 +33,7 @@ export class CharacterManager {
     this.vertexCount = posAttr.count;
     this.rest = new Float32Array(posAttr.array as ArrayLike<number>);
     this.restShaped = new Float32Array(this.rest.length);
+    this.restDir = new Float32Array(this.rest.length);
 
     // Full jelly material — locked, no runtime quality tiers.
     const material = new THREE.MeshPhysicalMaterial({
@@ -213,6 +216,10 @@ export class CharacterManager {
       this.restShaped[i] = x * s.sxz * bump;
       this.restShaped[i + 1] = y * s.sy * bump;
       this.restShaped[i + 2] = z * s.sxz * bump;
+      const sl = Math.hypot(this.restShaped[i], this.restShaped[i + 1], this.restShaped[i + 2]) || 1;
+      this.restDir[i] = this.restShaped[i] / sl;
+      this.restDir[i + 1] = this.restShaped[i + 1] / sl;
+      this.restDir[i + 2] = this.restShaped[i + 2] / sl;
     }
     const posAttr = this.positionAttr;
     (posAttr.array as Float32Array).set(this.restShaped);

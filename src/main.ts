@@ -392,6 +392,7 @@ function bootstrap(): void {
         `Pointers: ${squish.getPointerList().length}`,
         `FPS: ${softBodySys.getFps().toFixed(0)}  iOS: ${PERF.isIOS ? "Y" : "n"}  segs: ${PERF.sphereSegments}`,
         `Draws: ${renderer.renderer.info.render.calls}  tris: ${renderer.renderer.info.render.triangles}`,
+        `Deform: ${deformation.isGpu ? "GPU" : "CPU"}  segs: ${PERF.sphereSegments}`,
         "---------------------",
       ].join("\n");
     }

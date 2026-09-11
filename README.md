@@ -169,15 +169,12 @@ GameState {
 ### 性能
 
 - **画质锁定**：手机/桌面均为 96 段球、透射/清漆/光泽、DPR 2、AA；**不**运行时自动降画质
-- CPU 侧（不改外观）：
-  - SoftBody 配置按角色缓存
-  - pointer buffer 复用
-  - 活跃压力区域形变循环（不再每顶点扫 7 区）
-  - 脸部 Canvas 限频（iOS 约 12fps 跟眼神；表情变更仍即时）
-  - 空闲时法线隔帧；交互中每帧法线
-  - 手机静止时跳过 per-vertex noise
+- **V4 GPU 形变（默认开）**：`MeshPhysicalMaterial.onBeforeCompile` 注入顶点形变 + 有限差分法线；CPU 只写 uniforms  
+  - 回退：`?gpuDeform=0`
+- P0 CPU 路径（回退时仍更快）：FrameContext、`restDir` 缓存、活跃区域循环
+- 脸部 Canvas 限频（iOS）；空闲法线隔帧
 
-Debug：`?debug=softbody` 可看 FPS / draw calls / tris / segs。
+Debug：`?debug=softbody` 可看 FPS / draw calls / **Deform: GPU|CPU**。
 
 ### V3.1 Soft Body Pose Feedback
 
