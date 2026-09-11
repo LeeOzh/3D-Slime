@@ -168,9 +168,10 @@ GameState {
 
 ### 性能
 
-- SoftBody 配置按角色缓存，避免每帧 `resolve*`  
-- pointer 列表复用 buffer  
-- 空闲时法线隔帧计算（交互中仍每帧）
+- SoftBody 配置按角色缓存，避免每帧 `resolve*`
+- pointer 列表复用 buffer
+- **移动端**：球体 48 段、DPR≤1.35、关 transmission/clearcoat/sheen、粒子池缩小、脸纹理 256、空闲法线隔 3 帧、静止跳过 per-vertex noise
+- 桌面仍用 96 段 + 物理透射
 
 Debug：`?debug=softbody` 含 Mood / glance / boredom / yawn / Pet。
 
