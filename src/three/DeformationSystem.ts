@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { RADIUS } from "../core/constants";
 import type { GameState } from "../core/types";
-import { smoothstep } from "../core/utils";
+import { PRESSURE_REGIONS, REGION_DIRS } from "../core/softBody";
+import { clamp, smoothstep } from "../core/utils";
 import type { CharacterManager } from "./CharacterManager";
 
 const _v = new THREE.Vector3();
@@ -14,15 +15,14 @@ function pseudoNoise(x: number, y: number, z: number, t: number): number {
 /**
  * Local soft-body vertex deformation.
  *
- * P0 upgrades over V1:
- * - smoothstep falloff (softer rim, no sharp dent edge)
- * - lateral "rub" offset along drag direction
- * - secondary motion: ear lag, head lag, opposite-side compensation
+ * V3: multi-region pressure field + volume compensation + stretch/pinch
+ * applied per-vertex; secondary motion still runs after soft-body dent.
  */
 export class DeformationSystem {
   readonly pressPointLocal = new THREE.Vector3(0, 1, 0);
   /** Drag direction in local X/Y used for lateral rub. */
   readonly dragDir = new THREE.Vector2();
+  private normalSkip = 0;
 
   deformPoint(
     rx: number,
@@ -42,16 +42,35 @@ export class DeformationSystem {
     let z = rz;
 
     const pers = state.character.personality;
-    const squash = state.squash;
-    const sxz = 1 + squash * 0.62;
-    const sy = 1 - squash * 0.88;
+    const soft = state.softBody;
+    // Soft-body squash is primary; legacy squash is only a light residual.
+    const softActive = soft.isPressed || soft.squash > 0.02;
+    const squash = softActive
+      ? Math.max(soft.squash * 0.75, state.squash * 0.35)
+      : Math.max(state.squash * 0.7, soft.squash * 0.45);
+    const squashVis = squash * 0.55;
+    const sxz = 1 + squashVis * 0.55;
+    const sy = 1 - squashVis * 0.72;
     const stretch = state.stretch;
     const stretchLen = stretch.length();
     const wob = Math.abs(state.wobble) * 0.045 * pers.jiggle + Math.abs(state.happyBounce) * 0.03;
-    const idleAmp = state.reduceMotion ? 0 : 0.008 * pers.breath;
-    // Unified pressure — prefer SquishState, fall back to spring value.
-    const press = state.pressing ? state.squish.pressure || state.pressStrength : state.pressStrength;
-    const dentRadius = 0.9;
+    const idleAmp = state.reduceMotion ? 0 : 0.008 * pers.breath * (state.breathBoost || 1);
+    const press = state.pressing
+      ? Math.max(state.squish.pressure || 0, soft.localPressure || 0, state.pressStrength)
+      : Math.max(state.pressStrength, soft.localPressure);
+
+    // Soft-body local dents from pressure field (independent regions).
+    const field = soft.pressureField;
+    const hasField =
+      field["left-cheek"] > 0.01 ||
+      field["right-cheek"] > 0.01 ||
+      field.top > 0.01 ||
+      field.belly > 0.01 ||
+      field["left-ear"] > 0.01 ||
+      field["right-ear"] > 0.01 ||
+      field.mouth > 0.01;
+
+    const dentRadius = 0.95;
     const dentDepth = 0.55 * (pers.squishStrength ?? 1);
     const pp = this.pressPointLocal;
 
@@ -63,26 +82,53 @@ export class DeformationSystem {
       z = z * breath + nz * ripple * RADIUS;
     }
 
-    x *= sxz;
-    y *= sy;
-    z *= sxz;
+    // Soft-body whole scale (pinch / stretch / release wave).
+    x *= soft.scale.x * sxz;
+    y *= soft.scale.y * sy;
+    z *= soft.scale.z * sxz;
     y += state.happyBounce * 0.12 * pers.bounce * (0.55 + ny * 0.45);
 
-    if (press > 0.01) {
+    // --- Multi-region pressure field deformation ---
+    if (hasField && !state.reduceMotion) {
+      for (const region of PRESSURE_REGIONS) {
+        const p = field[region];
+        if (p < 0.02) continue;
+        const dir = REGION_DIRS[region];
+        const dist = Math.sqrt(
+          (nx - dir.x) * (nx - dir.x) + (ny - dir.y) * (ny - dir.y) + (nz - dir.z) * (nz - dir.z),
+        );
+        if (dist < dentRadius) {
+          const infl = smoothstep(dentRadius, 0, dist) * p * dentDepth * 0.9;
+          x -= nx * infl;
+          y -= ny * infl;
+          z -= nz * infl;
+        }
+        // Soft outer bulge (volume feel).
+        if (dist < dentRadius * 1.7) {
+          const mid = dentRadius * 1.25;
+          const band = 1 - smoothstep(0, dentRadius * 0.55, Math.abs(dist - mid));
+          if (band > 0) {
+            const infl = band * p * 0.09;
+            x += nx * infl;
+            y += ny * infl;
+            z += nz * infl;
+          }
+        }
+      }
+    }
+
+    // --- Legacy single-point dent (kept for V2 feel while pressing) ---
+    if (press > 0.01 && !hasField) {
       const dx = nx - pp.x;
       const dy = ny - pp.y;
       const dz = nz - pp.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-      // Smoothstep falloff: 1 at press point → 0 at dentRadius (soft rim).
       if (dist < dentRadius) {
         const infl = smoothstep(dentRadius, 0, dist) * press * dentDepth;
         x -= nx * infl;
         y -= ny * infl;
         z -= nz * infl;
       }
-
-      // Soft outer bulge ring (volume conservation feel).
       if (dist < dentRadius * 1.8) {
         const mid = dentRadius * 1.3;
         const band = 1 - smoothstep(0, dentRadius * 0.55, Math.abs(dist - mid));
@@ -93,25 +139,91 @@ export class DeformationSystem {
           z += nz * infl;
         }
       }
+    } else if (press > 0.01) {
+      // Blend a light global dent on top of field while actively pressing.
+      const dx = nx - pp.x;
+      const dy = ny - pp.y;
+      const dz = nz - pp.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < dentRadius) {
+        const infl = smoothstep(dentRadius, 0, dist) * press * dentDepth * 0.35;
+        x -= nx * infl;
+        y -= ny * infl;
+        z -= nz * infl;
+      }
+    }
 
-      // Lateral rub: drag direction smears the dent sideways.
-      if (state.dragging && stretchLen > 0.002) {
+    // Soft-body stretch smear along locked region.
+    if (soft.stretchAmount > 0.01) {
+      const lock = soft.lockRegion;
+      let influence = 0.55 + ny * 0.35;
+      if (lock === "left-cheek" || lock === "left-ear") {
+        influence *= clamp(0.55 - nx * 0.9, 0.15, 1.2);
+      } else if (lock === "right-cheek" || lock === "right-ear") {
+        influence *= clamp(0.55 + nx * 0.9, 0.15, 1.2);
+      } else if (lock === "top") {
+        influence *= smoothstep(-0.2, 0.9, ny);
+      } else if (lock === "belly") {
+        influence *= smoothstep(0.3, -0.7, ny);
+      }
+      // stretch vector is already magnitude-limited; don't multiply by amount again.
+      x += soft.stretch.x * influence * 0.85;
+      y += soft.stretch.y * influence * 0.85;
+      // Opposite side slightly follows (volume conservation).
+      if (lock === "left-cheek" || lock === "left-ear") {
+        x += soft.stretch.x * 0.12 * clamp(nx, 0, 1);
+      } else if (lock === "right-cheek" || lock === "right-ear") {
+        x += soft.stretch.x * 0.12 * clamp(-nx, 0, 1);
+      }
+    }
+
+    // Legacy lateral rub.
+    if (state.dragging && stretchLen > 0.002 && soft.stretchAmount < 0.05) {
+      if (press > 0.01) {
+        const dx = nx - pp.x;
+        const dy = ny - pp.y;
+        const dz = nz - pp.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const rub = smoothstep(dentRadius, 0, dist) * press * 0.35;
         x += stretch.x * rub;
         y += stretch.y * rub;
       }
+    }
 
-      // Opposite-side compensation (left press → right cheek puffs out slightly).
-      const side = state.sideComp;
-      if (Math.abs(side) > 0.002) {
-        // side > 0 means left was pressed → bulge +X
-        const face = Math.max(0, nz) * (1 - Math.abs(ny) * 0.5);
-        x += side * 0.06 * face * nx;
-        z += side * 0.02 * face * Math.abs(nx);
+    // Opposite-side compensation (left press → right cheek puffs out slightly).
+    const side = state.sideComp;
+    if (Math.abs(side) > 0.002) {
+      const face = Math.max(0, nz) * (1 - Math.abs(ny) * 0.5);
+      x += side * 0.06 * face * nx;
+      z += side * 0.02 * face * Math.abs(nx);
+    }
+
+    // Release wave: brief radial pulse.
+    if (soft.releaseEnergy > 0.02) {
+      const pulse = soft.releaseEnergy * 0.045 * (0.4 + Math.abs(ny) * 0.3 + Math.abs(nx) * 0.2);
+      x += nx * pulse;
+      y += ny * pulse;
+      z += nz * pulse;
+    }
+
+    // Petting: soft expanding ring from caress point.
+    if (soft.petStrength > 0.02 && soft.petWave > 0.01) {
+      const pc = soft.petCenter;
+      const dx = nx - pc.x;
+      const dy = ny - pc.y;
+      const dz = nz - pc.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const ringR = 0.15 + soft.petWave * 0.85;
+      const band = 1 - smoothstep(0, 0.28, Math.abs(dist - ringR));
+      if (band > 0) {
+        const infl = band * soft.petStrength * 0.05;
+        x += nx * infl;
+        y += ny * infl;
+        z += nz * infl;
       }
     }
 
-    // Secondary: ear lag — high side vertices follow delayed lean.
+    // Secondary: ear lag.
     const earLag = state.earLag;
     if (!state.reduceMotion && (Math.abs(earLag.x) > 0.001 || Math.abs(earLag.y) > 0.001)) {
       const earWeight = smoothstep(0.25, 0.85, ny) * (0.3 + Math.abs(nx));
@@ -119,7 +231,41 @@ export class DeformationSystem {
       y += earLag.y * 0.05 * earWeight;
     }
 
-    // Secondary: head lag — top vertices delayed follow of lean.
+    // Ear grab: local stretch is primary (body pose is mild).
+    // Geometry ears (cat / nezha bumps) and bun meshes both follow earStretch.
+    if (Math.abs(soft.earStretch.x) > 0.005 || Math.abs(soft.earStretch.y) > 0.005) {
+      const lock = soft.lockRegion;
+      const side = lock === "left-ear" ? -1 : lock === "right-ear" ? 1 : soft.earGrabSide;
+      if (side !== 0) {
+        const sideMask = side < 0 ? clamp(-nx, 0, 1) : clamp(nx, 0, 1);
+        const earW = smoothstep(0.15, 0.92, ny) * sideMask;
+        // Stronger local pull so the ear reads as "grabbed".
+        x += soft.earStretch.x * 0.95 * earW;
+        y += soft.earStretch.y * 0.7 * earW;
+        // Slight taper toward tip (feels stretched, not translated).
+        const tip = earW * earW;
+        x += soft.earStretch.x * 0.25 * tip;
+        y += soft.earStretch.y * 0.2 * tip;
+        // Opposite ear almost stays (tiny volume follow).
+        const other = side < 0 ? clamp(nx, 0, 1) : clamp(-nx, 0, 1);
+        const otherW = smoothstep(0.2, 0.9, ny) * other;
+        x += soft.earStretch.x * 0.08 * otherW;
+      }
+    } else if (soft.stretchAmount > 0.05 && (soft.lockRegion === "left-ear" || soft.lockRegion === "right-ear")) {
+      // Fallback before earStretch springs catch up.
+      const lock = soft.lockRegion;
+      if (lock === "left-ear") {
+        const earW = smoothstep(0.2, 0.9, ny) * clamp(-nx, 0, 1);
+        x += soft.stretch.x * 0.7 * earW;
+        y += soft.stretch.y * 0.45 * earW;
+      } else if (lock === "right-ear") {
+        const earW = smoothstep(0.2, 0.9, ny) * clamp(nx, 0, 1);
+        x += soft.stretch.x * 0.7 * earW;
+        y += soft.stretch.y * 0.45 * earW;
+      }
+    }
+
+    // Secondary: head lag.
     const headLag = state.headLag;
     if (!state.reduceMotion && (Math.abs(headLag.x) > 0.001 || Math.abs(headLag.y) > 0.001)) {
       const headWeight = smoothstep(0.3, 0.95, ny);
@@ -127,7 +273,7 @@ export class DeformationSystem {
       y += headLag.y * 0.05 * headWeight;
     }
 
-    if (stretchLen > 0.001) {
+    if (stretchLen > 0.001 && soft.stretchAmount < 0.05) {
       const influence = 0.55 + ny * 0.35;
       x += stretch.x * influence;
       y += stretch.y * influence;
@@ -138,7 +284,6 @@ export class DeformationSystem {
     x += state.lean.x * (0.35 + ny * 0.2);
     y += state.lean.y * 0.35;
 
-    // Sleepy droop — head sinks slightly.
     if (state.sleepy && !state.pressing) {
       const headW = smoothstep(0.1, 0.9, ny);
       y -= 0.06 * headW;
@@ -168,9 +313,28 @@ export class DeformationSystem {
       arr[i3 + 2] = _v.z;
     }
     posAttr.needsUpdate = true;
-    characters.geometry.computeVertexNormals();
+    // 96×96 sphere: skip normals every other frame when barely deforming.
+    const softLive =
+      state.pressing ||
+      Math.abs(state.wobble) > 0.02 ||
+      Math.abs(state.happyBounce) > 0.02 ||
+      state.softBody.stretchAmount > 0.02 ||
+      Math.abs(state.softBody.releaseEnergy) > 0.03 ||
+      Math.abs(state.softBody.pinchStrength) > 0.03 ||
+      state.softBody.petWave > 0.02;
+    if (softLive || this.normalSkip <= 0) {
+      characters.geometry.computeVertexNormals();
+      this.normalSkip = softLive ? 0 : 1;
+    } else {
+      this.normalSkip -= 1;
+    }
 
     const shape = state.character.shape;
+    const soft = state.softBody;
+    const softActive = soft.isPressed || soft.squash > 0.02;
+    const squash = softActive
+      ? Math.max(soft.squash * 0.75, state.squash * 0.35)
+      : Math.max(state.squash * 0.7, soft.squash * 0.45);
 
     if (characters.caramelCap.visible) {
       const topS = characters.shapeRadius(0, 1, 0, shape);
@@ -180,8 +344,8 @@ export class DeformationSystem {
       characters.slime.updateMatrixWorld();
       characters.caramelCap.position.copy(_v).applyMatrix4(characters.slime.matrixWorld);
       characters.caramelCap.quaternion.copy(characters.slime.quaternion);
-      const capSx = (0.95 + state.squash * 0.35) * (0.85 + topS * 0.2);
-      characters.caramelCap.scale.set(capSx, (1 - state.squash * 0.55) * 0.85, capSx);
+      const capSx = (0.95 + squash * 0.35) * (0.85 + topS * 0.2);
+      characters.caramelCap.scale.set(capSx, (1 - squash * 0.55) * 0.85, capSx);
     }
 
     if (characters.qiankunRing.visible) {
@@ -190,24 +354,46 @@ export class DeformationSystem {
       characters.qiankunRing.position.copy(_v).applyMatrix4(characters.slime.matrixWorld);
       characters.qiankunRing.quaternion.copy(characters.slime.quaternion);
       characters.qiankunRing.rotateX(Math.PI / 2);
-      const rs = 1 + state.squash * 0.25;
-      characters.qiankunRing.scale.set(rs, rs, 1 - state.squash * 0.4);
+      const rs = 1 + squash * 0.25;
+      characters.qiankunRing.scale.set(rs, rs, 1 - squash * 0.4);
     }
 
     if (characters.bunL.visible) {
       characters.slime.updateMatrixWorld();
       const bunRestY = RADIUS * 1.08;
       const bunRestX = RADIUS * 0.48;
-      // Ears/buns inherit ear lag so they swing after a cheek press.
       const elx = state.earLag.x;
-      this.deformPoint(-bunRestX + elx * 0.04, bunRestY, 0, time, state, _v);
+      const esx = soft.earStretch.x;
+      const esy = soft.earStretch.y;
+      // Left bun follows left-side ear grab; right bun follows right.
+      const grabL = soft.lockRegion === "left-ear" || soft.earGrabSide < 0;
+      const grabR = soft.lockRegion === "right-ear" || soft.earGrabSide > 0;
+      const offLx = elx * 0.04 + (grabL ? esx * 0.18 : esx * 0.04);
+      const offLy = grabL ? esy * 0.12 : 0;
+      const offRx = elx * 0.04 + (grabR ? esx * 0.18 : esx * 0.04);
+      const offRy = grabR ? esy * 0.12 : 0;
+      this.deformPoint(-bunRestX + offLx, bunRestY + offLy, 0, time, state, _v);
       characters.bunL.position.copy(_v).applyMatrix4(characters.slime.matrixWorld);
-      this.deformPoint(bunRestX + elx * 0.04, bunRestY, 0, time, state, _v);
+      this.deformPoint(bunRestX + offRx, bunRestY + offRy, 0, time, state, _v);
       characters.bunR.position.copy(_v).applyMatrix4(characters.slime.matrixWorld);
-      const bs = 1 - state.squash * 0.4;
+      const bs = 1 - squash * 0.4;
       const swing = 1 + Math.abs(elx) * 0.08;
-      characters.bunL.scale.set((1 + state.squash * 0.25) * swing, bs, 1 + state.squash * 0.25);
-      characters.bunR.scale.copy(characters.bunL.scale);
+      const stretchL = grabL ? Math.hypot(esx, esy) : 0;
+      const stretchR = grabR ? Math.hypot(esx, esy) : 0;
+      // Elongate the grabbed bun along pull direction.
+      characters.bunL.scale.set(
+        (1 + squash * 0.25 + stretchL * 0.35) * swing,
+        bs * (1 - stretchL * 0.12),
+        1 + squash * 0.25,
+      );
+      characters.bunR.scale.set(
+        (1 + squash * 0.25 + stretchR * 0.35) * swing,
+        bs * (1 - stretchR * 0.12),
+        1 + squash * 0.25,
+      );
+      // Local ear tilt — independent of body rotation (grabbed, not puppet).
+      characters.bunL.rotation.set(0, 0, grabL ? soft.earTilt : state.earLag.x * 0.04);
+      characters.bunR.rotation.set(0, 0, grabR ? soft.earTilt : -state.earLag.x * 0.04);
     }
 
     const faceS = characters.shapeRadius(0, 0.15, 1, shape);
@@ -216,10 +402,10 @@ export class DeformationSystem {
     this.deformPoint(0, faceRestY, faceRestZ, time, state, _v);
     state.faceCenter.copy(_v);
     characters.faceMesh.position.copy(_v);
-    const fs = 1 - state.squash * 0.35;
+    const fs = 1 - squash * 0.35;
     characters.faceMesh.scale.set(
-      1 + state.squash * 0.4 + Math.abs(state.stretch.x) * 0.3,
-      fs + Math.abs(state.stretch.y) * 0.35,
+      1 + squash * 0.4 + Math.abs(state.stretch.x) * 0.3 + Math.abs(soft.stretch.x) * 0.25,
+      fs + Math.abs(state.stretch.y) * 0.35 + Math.abs(soft.stretch.y) * 0.25,
       1,
     );
     characters.faceMesh.lookAt(camera.position);

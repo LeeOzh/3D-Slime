@@ -1,4 +1,5 @@
 import type * as THREE from "three";
+import type { SoftBodyPersonality, SoftBodyState } from "./softBody";
 
 export type ExpressionName =
   | "idle"
@@ -10,6 +11,16 @@ export type ExpressionName =
   | "angry"
   | "dizzy"
   | "excited"
+  | "sleepy";
+
+/** High-level life mood; expression system maps this onto face states. */
+export type LifeMood =
+  | "neutral"
+  | "happy"
+  | "annoyed"
+  | "excited"
+  | "dizzy"
+  | "bored"
   | "sleepy";
 
 /** Body region under the pointer, derived from local-space hit direction. */
@@ -93,6 +104,8 @@ export interface CharacterPersonality {
   springK: number;
   /** Release damping — lower = bouncier overshoot. */
   damping: number;
+  /** Optional V3 soft-body multipliers (defaults to identity). */
+  soft?: SoftBodyPersonality;
 }
 
 export interface CharacterDef {
@@ -177,6 +190,25 @@ export interface GameState {
   sleepy: boolean;
   idleFidgetAt: number;
 
+  /** V3.2 life / personality. */
+  mood: LifeMood;
+  /** Seconds left to hold current mood (0 = clear when convenient). */
+  moodHold: number;
+  /** 0…1 how much the face looks toward the pointer. */
+  glance: number;
+  glanceNdc: THREE.Vector2;
+  /** 0…1 boredom from lack of attention. */
+  boredom: number;
+  /** 0…1 in-progress yawn. */
+  yawn: number;
+  /** Multiplies idle breathing amplitude (1 = normal). */
+  breathBoost: number;
+  /** Last time user first contacted after a long gap (for startled). */
+  lastGapMs: number;
+
   /** Peak pressure reached during the current press (for stats). */
   pressPeak: number;
+
+  /** V3 soft-body physical state (pressure field / stretch / pinch / release). */
+  softBody: SoftBodyState;
 }

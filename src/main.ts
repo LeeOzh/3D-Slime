@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { CHARACTERS, TINTS } from "./core/constants";
 import { eventBus } from "./core/EventBus";
 import type { CharacterDef, GameState } from "./core/types";
+import { createSoftBodyState } from "./core/softBody";
 import { AnimationLoop } from "./three/AnimationLoop";
 import { CameraFeedback } from "./three/CameraFeedback";
 import { CameraManager } from "./three/CameraManager";
@@ -16,6 +17,7 @@ import { ExpressionSystem } from "./three/ExpressionSystem";
 import { ParticleManager } from "./three/ParticleManager";
 import { RendererManager } from "./three/RendererManager";
 import { SceneManager } from "./three/SceneManager";
+import { SoftBodySystem } from "./three/SoftBodySystem";
 import { SoundManager } from "./three/SoundManager";
 import { SquishSystem } from "./three/SquishSystem";
 import { BadgePanel } from "./ui/BadgePanel";
@@ -104,7 +106,16 @@ function bootstrap(): void {
     lastInteractionAt: 0,
     sleepy: false,
     idleFidgetAt: 0,
+    mood: "neutral",
+    moodHold: 0,
+    glance: 0,
+    glanceNdc: new THREE.Vector2(),
+    boredom: 0,
+    yawn: 0,
+    breathBoost: 1,
+    lastGapMs: 0,
     pressPeak: 0,
+    softBody: createSoftBodyState(),
   };
 
   let renderer: RendererManager;
@@ -124,6 +135,8 @@ function bootstrap(): void {
   const particles = new ParticleManager(sceneManager.scene);
   const sound = new SoundManager();
   const cameraFeedback = new CameraFeedback();
+  const softBodySys = new SoftBodySystem();
+  softBodySys.resolveConfig(character);
 
   const settings0 = storage.getSettings();
   sound.setEnabled(settings0.soundEnabled);
@@ -176,6 +189,8 @@ function bootstrap(): void {
   function selectCharacter(ch: CharacterDef): void {
     idleSys.markInteraction();
     state.character = ch;
+    softBodySys.resolveConfig(ch);
+    softBodySys.reset(state.softBody);
     characterPanel.setActive(ch.id);
     characters.rebuildRestShape(state);
     characters.setExtrasVisible(ch);
@@ -228,6 +243,7 @@ function bootstrap(): void {
     sound,
     cameraFeedback,
     idleSys,
+    softBodySys,
     {
       hideHint: () => badge.hideHint(),
       say: (text) => badge.say(text),
@@ -288,11 +304,37 @@ function bootstrap(): void {
   statsUi.setCount(state.pressCount);
   badge.say(character.lines.idle);
 
+  // Soft-body debug: ?debug=softbody
+  const debugEnabled = new URLSearchParams(window.location.search).get("debug") === "softbody";
+  let debugEl: HTMLElement | null = null;
+  if (debugEnabled) {
+    debugEl = document.createElement("pre");
+    debugEl.id = "softbody-debug";
+    debugEl.style.cssText = [
+      "position:fixed",
+      "left:12px",
+      "bottom:120px",
+      "z-index:40",
+      "margin:0",
+      "padding:10px 12px",
+      "border-radius:10px",
+      "background:rgba(20,14,36,.82)",
+      "color:#E9D5FF",
+      "font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace",
+      "pointer-events:none",
+      "white-space:pre",
+      "max-width:280px",
+    ].join(";");
+    document.body.appendChild(debugEl);
+  }
+
   const loop = new AnimationLoop((dt, time) => {
     comboMgr.update();
     state.combo = comboMgr.count;
     state.comboLevel = comboMgr.level;
     idleSys.update(dt);
+    // Soft-body physics runs after input, before deformation.
+    softBodySys.update(state, squish.getPointerList(), dt);
     motion.update(dt, state, state.character);
     deformation.update(characters, state, time, cameraManager.camera);
     motion.applyToMesh(characters.slime, sceneManager.shadowMesh, state);
@@ -306,6 +348,9 @@ function bootstrap(): void {
         combo: state.combo,
         recentPressCount: state.recentPressTimes.length,
         sleepy: state.sleepy,
+        glance: state.glance,
+        boredom: state.boredom,
+        yawn: state.yawn,
       });
       if (line) badge.say(line);
     }
@@ -313,8 +358,41 @@ function bootstrap(): void {
     characters.material.color.copy(state.color);
     characters.material.attenuationColor.copy(state.atten);
     cameraFeedback.update(dt, cameraManager.camera);
-    statsUi.setPress(state.pressStrength);
+    statsUi.setPress(Math.max(state.pressStrength, state.softBody.localPressure));
     statsUi.setWobble(state.wobbleVel);
+    if (debugEl) {
+      const soft = state.softBody;
+      const field = soft.pressureField;
+      const rot = soft.rotation;
+      const rad = (v: number) => `${((v * 180) / Math.PI).toFixed(1)}°`;
+      debugEl.textContent = [
+        "---------------------",
+        "SOFT BODY DEBUG",
+        "---------------------",
+        `Mode: ${soft.mode}`,
+        `Mood: ${state.mood}  glance ${state.glance.toFixed(2)}  bored ${state.boredom.toFixed(2)}  yawn ${state.yawn.toFixed(2)}`,
+        `Pressure: ${soft.localPressure.toFixed(2)}`,
+        `  L-cheek ${field["left-cheek"].toFixed(2)}  R-cheek ${field["right-cheek"].toFixed(2)}`,
+        `  top ${field.top.toFixed(2)}  belly ${field.belly.toFixed(2)}`,
+        `  L-ear ${field["left-ear"].toFixed(2)}  R-ear ${field["right-ear"].toFixed(2)}`,
+        `Center: ${soft.pressureCenter.x.toFixed(2)} ${soft.pressureCenter.y.toFixed(2)}`,
+        `Stretch: ${soft.stretchAmount.toFixed(2)}`,
+        `Pet: ${soft.isPetting ? "Y" : "n"} ${soft.petStrength.toFixed(2)} wave ${soft.petWave.toFixed(2)}`,
+        `Ear: side ${soft.earGrabSide} tilt ${((soft.earTilt * 180) / Math.PI).toFixed(1)}° stretch ${soft.earStretch.x.toFixed(2)} ${soft.earStretch.y.toFixed(2)}`,
+        `Pinch: ${soft.pinchStrength.toFixed(2)}`,
+        `Release: ${soft.releaseImpulse.toFixed(2)} / E ${soft.releaseEnergy.toFixed(2)}`,
+        `Scale: ${soft.scale.x.toFixed(2)} ${soft.scale.y.toFixed(2)} ${soft.scale.z.toFixed(2)}`,
+        `Rotation:`,
+        `  X ${rad(rot.x)}  Y ${rad(rot.y)}  Z ${rad(rot.z)}`,
+        `Target:`,
+        `  X ${rad(rot.targetX)}  Y ${rad(rot.targetY)}  Z ${rad(rot.targetZ)}`,
+        `Velocity:`,
+        `  X ${rot.velX.toFixed(2)}  Y ${rot.velY.toFixed(2)}  Z ${rot.velZ.toFixed(2)}`,
+        `Pointers: ${squish.getPointerList().length}`,
+        `FPS: ${softBodySys.getFps().toFixed(0)}`,
+        "---------------------",
+      ].join("\n");
+    }
     renderer.render(sceneManager.scene, cameraManager.camera);
   });
   loop.start();

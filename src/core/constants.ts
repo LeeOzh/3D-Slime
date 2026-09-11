@@ -18,7 +18,7 @@ export const CHARACTERS: CharacterDef[] = [
       happy: "圆宝开心转圈！",
     },
     face: { eye: "soft", mouth: "smile", blink: true },
-    personality: { breath: 1, jiggle: 1, bounce: 1, squishStrength: 1, springK: 1, damping: 1 },
+    personality: { breath: 1, jiggle: 1, bounce: 1, squishStrength: 1, springK: 1, damping: 1, soft: { softness: 1.1, propagation: 1.15, stretchiness: 1.0, releaseSnap: 0.9, rotationSpring: 0.85, rotationDamping: 1.0, rotationAmount: 1.1 } },
     particleType: "star",
   },
   {
@@ -37,7 +37,7 @@ export const CHARACTERS: CharacterDef[] = [
     },
     face: { eye: "happy", mouth: "open-smile", blink: false },
     // Soft pudding: deeper squash, slower spring, more jiggle, less overshoot.
-    personality: { breath: 0.85, jiggle: 1.45, bounce: 0.9, squishStrength: 1.15, springK: 0.85, damping: 1.15 },
+    personality: { breath: 0.85, jiggle: 1.45, bounce: 0.9, squishStrength: 1.15, springK: 0.85, damping: 1.15, soft: { softness: 1.28, propagation: 1.25, stretchiness: 1.12, releaseSnap: 0.78, rotationSpring: 0.75, rotationDamping: 0.9, rotationAmount: 1.2 } },
     caramel: true,
     particleType: "dust",
   },
@@ -57,7 +57,7 @@ export const CHARACTERS: CharacterDef[] = [
     },
     face: { eye: "sparkle", mouth: "small-o", blink: true },
     // Water drop: shallow dent, snappy restore.
-    personality: { breath: 1.1, jiggle: 0.85, bounce: 1.1, squishStrength: 0.85, springK: 1.15, damping: 0.9 },
+    personality: { breath: 1.1, jiggle: 0.85, bounce: 1.1, squishStrength: 0.85, springK: 1.15, damping: 0.9, soft: { softness: 0.9, propagation: 0.82, stretchiness: 0.9, releaseSnap: 1.2, rotationSpring: 1.25, rotationDamping: 1.05, rotationAmount: 0.75 } },
     particleType: "bubble",
   },
   {
@@ -76,7 +76,7 @@ export const CHARACTERS: CharacterDef[] = [
     },
     face: { eye: "cat", mouth: "cat", blink: true },
     // Cat: medium, lively bounce.
-    personality: { breath: 1, jiggle: 1.05, bounce: 1.15, squishStrength: 0.95, springK: 1.05, damping: 0.92 },
+    personality: { breath: 1, jiggle: 1.05, bounce: 1.15, squishStrength: 0.95, springK: 1.05, damping: 0.92, soft: { softness: 0.98, propagation: 0.95, stretchiness: 1.18, releaseSnap: 1.05, rotationSpring: 1.1, rotationDamping: 0.95, rotationAmount: 1.05 } },
     particleType: "heart",
   },
   {
@@ -95,7 +95,7 @@ export const CHARACTERS: CharacterDef[] = [
     },
     face: { eye: "nezha", mouth: "smirk", blink: true },
     // Nezha: firmer, springier, strong rebound.
-    personality: { breath: 0.95, jiggle: 1.1, bounce: 1.3, squishStrength: 0.8, springK: 1.2, damping: 0.85 },
+    personality: { breath: 0.95, jiggle: 1.1, bounce: 1.3, squishStrength: 0.8, springK: 1.2, damping: 0.85, soft: { softness: 0.72, propagation: 0.78, stretchiness: 0.88, releaseSnap: 1.32, rotationSpring: 1.35, rotationDamping: 1.2, rotationAmount: 0.85 } },
     qiankun: true,
     particleType: "spark",
   },

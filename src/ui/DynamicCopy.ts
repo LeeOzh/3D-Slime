@@ -11,11 +11,15 @@ export class DynamicCopy {
     frenzy: "你是不是压力有点大？",
     rest: "好多了吗？",
     sleepy: "它好像睡着了…",
+    glance: "诶，你在看我吗？",
+    bored: "好无聊…捏我一下嘛",
+    yawn: "哈～好困",
   } as const;
 
   private lastKey = "";
   private lastAt = 0;
   private restUntil = 0;
+  private lastGlanceSayAt = 0;
 
   /** Called every frame with light state. Returns text to show, or null to keep. */
   sample(input: {
@@ -24,6 +28,9 @@ export class DynamicCopy {
     combo: number;
     recentPressCount: number;
     sleepy: boolean;
+    glance?: number;
+    boredom?: number;
+    yawn?: number;
   }): string | null {
     const now = performance.now();
     let key: keyof typeof DynamicCopy.LINES = "idle";
@@ -34,6 +41,11 @@ export class DynamicCopy {
       else if (input.combo >= 5) key = "highCombo";
       else if (input.pressure < 0.35) key = "gentle";
       else key = "combo";
+    } else if (input.yawn != null && input.yawn > 0.35 && input.yawn < 1.5) key = "yawn";
+    else if ((input.boredom ?? 0) > 0.55) key = "bored";
+    else if ((input.glance ?? 0) > 0.85 && now - this.lastGlanceSayAt > 12_000) {
+      this.lastGlanceSayAt = now;
+      key = "glance";
     } else if (now < this.restUntil) key = "rest";
     else key = "idle";
 

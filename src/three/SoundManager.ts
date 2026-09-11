@@ -128,6 +128,50 @@ export class SoundManager {
     if (p > 0.45) this.noise(vol * 0.3, 0.06, 2000, 1.1);
   }
 
+  /** Light rubber stretch while dragging. */
+  playStretch(amount: number): void {
+    if (!this.ready()) return;
+    const a = Math.min(Math.max(amount, 0), 1);
+    const vol = 0.04 + a * 0.1;
+    this.tone(120 + a * 90, "triangle", vol * 0.5, 0.07, 90 + a * 40);
+    this.noise(vol * 0.25, 0.05, 900 + a * 600, 0.7);
+  }
+
+  /** Snap on stretch release. */
+  playSnap(strength: number): void {
+    if (!this.ready()) return;
+    const s = Math.min(Math.max(strength, 0), 1);
+    const vol = 0.08 + s * 0.18;
+    this.tone(480 + s * 220, "square", vol * 0.35, 0.05, 900 + s * 400);
+    this.noise(vol * 0.4, 0.04, 3200, 1.4);
+  }
+
+  /** Low squish for dual-touch pinch. */
+  playPinch(strength: number): void {
+    if (!this.ready()) return;
+    const s = Math.min(Math.max(strength, 0), 1);
+    const vol = 0.08 + s * 0.16;
+    this.tone(140 - s * 40, "sine", vol, 0.12, 70);
+    this.noise(vol * 0.35, 0.08, 600 + s * 400, 0.8);
+  }
+
+  /** Soft caress while petting the surface. */
+  playPet(intensity: number): void {
+    if (!this.ready()) return;
+    const a = Math.min(Math.max(intensity, 0), 1);
+    const vol = 0.03 + a * 0.07;
+    this.tone(320 + a * 80, "sine", vol * 0.35, 0.06, 380);
+    this.noise(vol * 0.2, 0.05, 1400 + a * 600, 0.6);
+  }
+
+  /** Tiny pop for a boop. */
+  playBoop(): void {
+    if (!this.ready()) return;
+    this.tone(520, "sine", 0.1, 0.05, 780);
+    this.tone(880, "triangle", 0.05, 0.04);
+    this.noise(0.04, 0.03, 2400, 1.2);
+  }
+
   playCombo(combo: number): void {
     if (!this.ready()) return;
     const step = Math.min(combo, 12);

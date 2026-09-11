@@ -1,5 +1,6 @@
 import type { CharacterDef, ExpressionName, EyeStyle, GameState } from "../core/types";
-import { clamp } from "../core/utils";
+import { clamp, smoothstep } from "../core/utils";
+import { isEarRegion } from "../core/softBody";
 
 /** Continuous face openness targets — blend instead of hard-switching. */
 interface FaceBlend {
@@ -18,6 +19,10 @@ export class ExpressionSystem {
   private dirty = true;
   private blendEye = 1;
   private blendMouth = 0.45;
+  private lastGlanceX = 0;
+  private lastGlanceY = 0;
+  private lastGlance = 0;
+  private lastYawn = 0;
 
   markDirty(): void {
     this.dirty = true;
@@ -39,23 +44,72 @@ export class ExpressionSystem {
       if (state.expr !== "sleepy") this.setExpression(state, "sleepy", 99);
       return;
     }
-    if (!state.pressing) return;
+    if (!state.pressing) {
+      // Idle life moods (bored / yawn) only when hands-off.
+      if (state.yawn > 0.25 && state.yawn < 1.8) {
+        if (state.expr !== "surprised") this.setExpression(state, "surprised", 99);
+        return;
+      }
+      if (state.mood === "bored" && state.expr !== "sleepy") {
+        // Half-sleepy look without full sleep.
+        if (state.expr !== "drag") this.setExpression(state, "drag", 2.2);
+        return;
+      }
+      return;
+    }
+    // Soft-body stretch / multi-touch own the face while active.
+    const soft = state.softBody;
+    const earGrab =
+      isEarRegion(soft.lockRegion) || soft.earGrabSide !== 0 ||
+      (soft.isStretching && isEarRegion(soft.lockRegion));
+    if (earGrab && (soft.isStretching || soft.isPressed || Math.abs(soft.earTilt) > 0.04 || soft.earStretch.length() > 0.08)) {
+      // Ear yank → angry quickly (local pull is the signal, not global stretchAmount).
+      const earAmt = Math.max(soft.earStretch.length(), soft.stretchAmount);
+      if (earAmt > 0.22 || Math.abs(soft.earTilt) > 0.1) {
+        if (state.expr !== "angry") this.setExpression(state, "angry", 99);
+        return;
+      }
+      if (state.expr !== "pain") this.setExpression(state, "pain", 99);
+      return;
+    }
+    if (soft.isStretching) {
+      if (soft.stretchAmount > 0.9) {
+        if (state.expr !== "angry") this.setExpression(state, "angry", 99);
+        return;
+      }
+      if (soft.stretchAmount > 0.55) {
+        if (state.expr !== "pain") this.setExpression(state, "pain", 99);
+        return;
+      }
+      if (state.expr !== "drag") this.setExpression(state, "drag", 99);
+      return;
+    }
+    if (soft.isMultiTouch) {
+      const next: ExpressionName = Math.abs(soft.pinchStrength) > 0.55 ? "pain" : "surprised";
+      if (state.expr !== next) this.setExpression(state, next, 99);
+      return;
+    }
+
+    // Mood-aware press ladder (L3).
     const p = state.squish.pressure;
     const combo = state.combo;
-    // High combo + mid pressure → excited; rapid presses → dizzy.
-    if (combo >= 10 && p > 0.35) {
+    if (state.mood === "dizzy" || (state.recentPressTimes.length >= 6 && p < 0.55)) {
+      if (state.expr !== "dizzy") this.setExpression(state, "dizzy", 99);
+      return;
+    }
+    if (state.mood === "excited" || (combo >= 10 && p > 0.35)) {
       if (state.expr !== "excited") this.setExpression(state, "excited", 99);
       return;
     }
-    if (state.recentPressTimes.length >= 6 && p < 0.55) {
-      if (state.expr !== "dizzy") this.setExpression(state, "dizzy", 99);
+    if (state.mood === "happy" && p < 0.55) {
+      if (state.expr !== "happy") this.setExpression(state, "happy", 99);
       return;
     }
     if (state.dragging) {
       if (state.expr !== "drag") this.setExpression(state, "drag", 99);
       return;
     }
-    // Pressure ladder: idle-ish → surprised → pain → strong pain (press)
+    // Pressure ladder: surprised → pain → press
     let next: ExpressionName = "press";
     if (p < 0.2) next = "surprised";
     else if (p < 0.5) next = "surprised";
@@ -86,7 +140,17 @@ export class ExpressionSystem {
     const blending =
       Math.abs(target.eyeOpen - this.blendEye) > 0.01 ||
       Math.abs(target.mouthOpen - this.blendMouth) > 0.01;
-    if (state.faceDirty || this.dirty || blending) {
+    // Eyes track the pointer — redraw while glance is moving.
+    const glanceMoving =
+      Math.abs(state.glanceNdc.x - this.lastGlanceX) > 0.01 ||
+      Math.abs(state.glanceNdc.y - this.lastGlanceY) > 0.01 ||
+      Math.abs(state.glance - this.lastGlance) > 0.02 ||
+      Math.abs(state.yawn - this.lastYawn) > 0.04;
+    this.lastGlanceX = state.glanceNdc.x;
+    this.lastGlanceY = state.glanceNdc.y;
+    this.lastGlance = state.glance;
+    this.lastYawn = state.yawn;
+    if (state.faceDirty || this.dirty || blending || glanceMoving) {
       this.drawFace(state, character, faceCtx, target);
       faceTex.needsUpdate = true;
       state.faceDirty = false;
@@ -180,6 +244,21 @@ export class ExpressionSystem {
       eyeOpen = eyeOpen * Math.max(state.blink, 0.08);
     }
 
+    // Yawn: big mouth, slightly closed eyes.
+    if (state.yawn > 0.2 && state.yawn < 1.8) {
+      const y = smoothstep(0.2, 0.7, state.yawn) * smoothstep(1.8, 1.1, state.yawn);
+      mouthOpen = clamp(mouthOpen + y * 0.95, 0, 1.35);
+      eyeOpen = clamp(eyeOpen * (1 - y * 0.45), 0.08, 1.3);
+      if (mouthStyle !== "o" && mouthStyle !== "open-smile" && mouthStyle !== "big-smile") {
+        mouthStyle = "o";
+      }
+    }
+
+    // Bored: droopy eyes.
+    if (!state.pressing && state.mood === "bored" && state.yawn < 0.2) {
+      eyeOpen = clamp(eyeOpen * 0.55, 0.15, 1.3);
+    }
+
     return {
       eyeOpen: clamp(eyeOpen, 0, 1.3),
       mouthOpen: clamp(mouthOpen, 0, 1.3),
@@ -195,12 +274,17 @@ export class ExpressionSystem {
     y: number,
     style: EyeStyle,
     open: number,
+    glanceX = 0,
+    glanceY = 0,
   ): void {
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(x + glanceX * 0.35, y + glanceY * 0.35);
     ctx.fillStyle = "#2B2140";
     ctx.strokeStyle = "#2B2140";
     ctx.lineCap = "round";
+    // Pupil / highlight shift harder than the eye outline so it reads as "looking".
+    const px = glanceX * 0.85;
+    const py = glanceY * 0.85;
 
     if (style === "happy") {
       ctx.lineWidth = 10;
@@ -210,31 +294,31 @@ export class ExpressionSystem {
     } else if (style === "cat" || style === "squint") {
       ctx.lineWidth = style === "squint" ? 11 : 9;
       ctx.beginPath();
-      ctx.moveTo(-18, style === "squint" ? 4 : 2);
-      ctx.lineTo(18, style === "squint" ? -4 : -2);
+      ctx.moveTo(-18 + px * 0.4, style === "squint" ? 4 + py * 0.3 : 2);
+      ctx.lineTo(18 + px * 0.4, style === "squint" ? -4 + py * 0.3 : -2);
       ctx.stroke();
     } else if (style === "angry") {
       ctx.lineWidth = 10;
       ctx.beginPath();
-      ctx.moveTo(-18, -6);
-      ctx.lineTo(18, 6);
+      ctx.moveTo(-18 + px * 0.3, -6 + py * 0.2);
+      ctx.lineTo(18 + px * 0.3, 6 + py * 0.2);
       ctx.stroke();
     } else if (style === "dizzy") {
       ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.arc(px * 0.5, py * 0.5, 14, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(-8, -8);
-      ctx.lineTo(8, 8);
-      ctx.moveTo(8, -8);
-      ctx.lineTo(-8, 8);
+      ctx.moveTo(-8 + px * 0.5, -8 + py * 0.5);
+      ctx.lineTo(8 + px * 0.5, 8 + py * 0.5);
+      ctx.moveTo(8 + px * 0.5, -8 + py * 0.5);
+      ctx.lineTo(-8 + px * 0.5, 8 + py * 0.5);
       ctx.stroke();
     } else if (style === "sleepy") {
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.moveTo(-16, 2);
-      ctx.quadraticCurveTo(0, 8, 16, 2);
+      ctx.moveTo(-16 + px * 0.3, 2);
+      ctx.quadraticCurveTo(px * 0.5, 8, 16 + px * 0.3, 2);
       ctx.stroke();
     } else if (style === "nezha") {
       ctx.rotate(x < 256 ? -0.22 : 0.22);
@@ -251,7 +335,7 @@ export class ExpressionSystem {
         ctx.fill();
         ctx.fillStyle = "#fff";
         ctx.beginPath();
-        ctx.ellipse(-5, -4 * scale, 6, 5 * scale, 0, 0, Math.PI * 2);
+        ctx.ellipse(-5 + px, -4 * scale + py, 6, 5 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = "#7F1D1D";
         ctx.lineWidth = 5;
@@ -263,8 +347,8 @@ export class ExpressionSystem {
     } else if (open < 0.15) {
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.moveTo(-16, 0);
-      ctx.quadraticCurveTo(0, 10, 16, 0);
+      ctx.moveTo(-16 + px * 0.3, 0);
+      ctx.quadraticCurveTo(px * 0.5, 10, 16 + px * 0.3, 0);
       ctx.stroke();
     } else {
       const rx = style === "sparkle" ? 22 : style === "wide" ? 20 : 18;
@@ -275,11 +359,16 @@ export class ExpressionSystem {
       ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.ellipse(-6, -8 * scale, 7, 9 * scale, 0, 0, Math.PI * 2);
+      ctx.ellipse(-6 + px, -8 * scale + py, 7, 9 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
       if (style === "sparkle" || style === "wide") {
         ctx.beginPath();
-        ctx.ellipse(8, 6 * scale, 4, 5 * scale, 0, 0, Math.PI * 2);
+        ctx.ellipse(8 + px, 6 * scale + py, 4, 5 * scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Extra catchlight so glance is readable on plain oval eyes.
+        ctx.beginPath();
+        ctx.ellipse(6 + px * 1.1, 4 * scale + py * 1.1, 3.5, 4.5 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -444,8 +533,18 @@ export class ExpressionSystem {
       ctx.restore();
     }
 
-    this.drawEye(ctx, 175, 220, blend.eyeStyle, blend.eyeOpen);
-    this.drawEye(ctx, 337, 220, blend.eyeStyle, blend.eyeOpen);
+    const glance = this.glanceOffset(state);
+    this.drawEye(ctx, 175, 220, blend.eyeStyle, blend.eyeOpen, glance.x, glance.y);
+    this.drawEye(ctx, 337, 220, blend.eyeStyle, blend.eyeOpen, glance.x, glance.y);
     this.drawMouth(ctx, 256, 310, blend.mouthStyle, blend.mouthOpen);
+  }
+
+  private glanceOffset(state: GameState): { x: number; y: number } {
+    const g = clamp(state.glance, 0, 1);
+    // Canvas 512 face: keep outline shift modest, pupil shift large (see drawEye).
+    return {
+      x: state.glanceNdc.x * 28 * g,
+      y: -state.glanceNdc.y * 18 * g,
+    };
   }
 }

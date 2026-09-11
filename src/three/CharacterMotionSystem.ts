@@ -28,7 +28,12 @@ export class CharacterMotionSystem {
     state.lean.y += (state.leanTarget.y - state.lean.y) * (1 - Math.exp(-8 * dt));
 
     {
-      const target = state.pressing ? state.pressStrength * 0.42 : 0;
+      // Soft-body owns whole-body squash while V3 interactions are live.
+      // Keep a small legacy residual so V2 spring juice (wobble release) still reads.
+      const softActive = state.softBody.isPressed || state.softBody.squash > 0.02;
+      const target = state.pressing
+        ? state.pressStrength * (softActive ? 0.12 : 0.42)
+        : 0;
       const k = (state.pressing ? 200 : 140) * springK;
       const c = (state.pressing ? 18 : 7.5) * damping;
       const acc = (target - state.squash) * k - state.squashVel * c;
@@ -95,8 +100,9 @@ export class CharacterMotionSystem {
       state.sideCompVel = 0;
     }
 
-    // Keep unified SquishState.pressure in sync with the press spring.
-    state.squish.pressure = Math.min(state.pressStrength, 1);
+    // Keep unified SquishState.pressure in sync with the stronger of press spring / soft body.
+    const softP = state.softBody.localPressure;
+    state.squish.pressure = Math.min(Math.max(state.pressStrength, softP), 1);
     state.squish.isPressing = state.pressing;
 
     if (character.face.blink && !state.reduceMotion) {
@@ -118,13 +124,20 @@ export class CharacterMotionSystem {
     shadow: THREE.Mesh,
     state: GameState,
   ): void {
-    const stretchLen = state.stretch.length();
-    const shadowScale = 1 + state.squash * 0.35 + stretchLen * 0.4;
+    const soft = state.softBody;
+    const stretchLen = Math.max(state.stretch.length(), soft.stretchAmount * 0.7);
+    const softActive = soft.isPressed || soft.squash > 0.02;
+    const squash = softActive
+      ? Math.max(soft.squash * 0.75, state.squash * 0.35)
+      : Math.max(state.squash * 0.7, soft.squash * 0.45);
+    const shadowScale = 1 + squash * 0.35 + stretchLen * 0.4;
     shadow.scale.set(shadowScale, shadowScale, 1);
     const shadowMat = Array.isArray(shadow.material) ? shadow.material[0] : shadow.material;
-    (shadowMat as THREE.MeshBasicMaterial).opacity = 0.85 + state.squash * 0.2;
-    slime.rotation.x = -state.lean.y * 0.35;
-    slime.rotation.z = -state.lean.x * 0.25;
-    slime.position.y = state.happyBounce * 0.18;
+    (shadowMat as THREE.MeshBasicMaterial).opacity = 0.85 + squash * 0.2;
+    slime.rotation.x = -state.lean.y * 0.35 + soft.rotation.x;
+    slime.rotation.y = soft.rotation.y;
+    slime.rotation.z = -state.lean.x * 0.25 + soft.rotation.z;
+    slime.position.y = state.happyBounce * 0.18 + soft.positionOffset.y;
+    slime.position.x = soft.positionOffset.x;
   }
 }
