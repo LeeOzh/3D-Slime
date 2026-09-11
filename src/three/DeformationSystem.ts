@@ -236,7 +236,7 @@ export class DeformationSystem {
           const mid = f.dentRadius * 1.25;
           const band = 1 - smoothstep(0, f.dentRadius * 0.55, Math.abs(dist - mid));
           if (band > 0) {
-            const infl = band * p * 0.09;
+            const infl = band * p * 0.07;
             x += nx * infl;
             y += ny * infl;
             z += nz * infl;

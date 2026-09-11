@@ -89,7 +89,8 @@ vec3 slimeDeform(vec3 rp) {
     float mid = uDentRadius * 1.25;
     float band = 1.0 - slimeSstep(0.0, uDentRadius * 0.55, abs(dist - mid));
     if (dist < uDentRadius * 1.7 && band > 0.0) {
-      p += n * (band * pr * 0.09);
+      // Slightly softer ring than V3 CPU — overlapping regions used to wrinkle.
+      p += n * (band * pr * 0.07);
     }
   }
 
@@ -221,8 +222,11 @@ vec3 transformed = slimeDeform( position );
 `;
 
 /**
- * Finite-difference normal from slimeDeform, blended with rest mesh normals
- * so ear bumps / silhouette match CPU computeVertexNormals more closely.
+ * Smooth normal from slimeDeform.
+ *
+ * Overlapping pressure-field dents + outer bulge rings are high-frequency in
+ * position. Tiny FD eps turns those into wrinkle-like shading. Use a wide
+ * central-difference stencil and lean on rest mesh normals.
  */
 export const SLIME_NORMAL_FN = /* glsl */ `
 vec3 slimeDeformedNormal( vec3 rp, vec3 restN ) {
@@ -242,7 +246,7 @@ vec3 slimeDeformedNormal( vec3 rp, vec3 restN ) {
     abs( uWobble ) * 0.5;
 
   // Idle / tiny deform: keep mesh rest normals (cat ears, nezha bumps).
-  if ( deformAmt < 0.015 ) {
+  if ( deformAmt < 0.02 ) {
     return rn;
   }
 
@@ -250,12 +254,19 @@ vec3 slimeDeformedNormal( vec3 rp, vec3 restN ) {
   vec3 up = abs( n.y ) < 0.95 ? vec3( 0.0, 1.0, 0.0 ) : vec3( 1.0, 0.0, 0.0 );
   vec3 t = normalize( cross( up, n ) );
   vec3 b = normalize( cross( n, t ) );
-  // Scale-aware epsilon — large enough for stability, small enough for dent falloff.
-  float eps = 0.018 * max( rl, 0.35 );
+
+  // Wide stencil: averages over dent/bulge rings so they read as soft volume,
+  // not surface wrinkles.
+  float eps = 0.055 * max( rl, 0.5 );
   vec3 p0 = slimeDeform( rp );
   vec3 p1 = slimeDeform( rp + t * eps );
+  vec3 pm1 = slimeDeform( rp - t * eps );
   vec3 p2 = slimeDeform( rp + b * eps );
-  vec3 nr = cross( p1 - p0, p2 - p0 );
+  vec3 pm2 = slimeDeform( rp - b * eps );
+
+  vec3 dT = p1 - pm1;
+  vec3 dB = p2 - pm2;
+  vec3 nr = cross( dT, dB );
   float len = length( nr );
   if ( len < 1e-10 ) {
     return rn;
@@ -263,8 +274,8 @@ vec3 slimeDeformedNormal( vec3 rp, vec3 restN ) {
   nr /= len;
   if ( dot( nr, n ) < 0.0 ) nr = -nr;
 
-  // Blend toward rest mesh normal so non-spherical bumps stay consistent.
-  float k = clamp( deformAmt * 2.5, 0.35, 0.85 );
+  // Stay closer to rest normals while pressing (CPU computeVertexNormals was softer).
+  float k = clamp( 0.25 + deformAmt * 0.9, 0.25, 0.55 );
   return normalize( mix( rn, nr, k ) );
 }
 `;
