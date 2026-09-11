@@ -32,6 +32,7 @@ export class WalkController {
   private canvas: HTMLCanvasElement | null = null;
   private camera: THREE.Camera | null = null;
   private target: THREE.Object3D | null = null;
+  private grabProxy: THREE.Mesh | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
   private downX = 0;
@@ -49,6 +50,13 @@ export class WalkController {
     this.canvas = canvas;
     this.camera = camera;
     this.target = target;
+    // Slightly larger invisible grab sphere — easier on touch than the deformed mesh.
+    if (!this.grabProxy) {
+      const geo = new THREE.SphereGeometry(1.55, 10, 8);
+      const mat = new THREE.MeshBasicMaterial({ visible: false });
+      this.grabProxy = new THREE.Mesh(geo, mat);
+      target.add(this.grabProxy);
+    }
     canvas.addEventListener("pointerdown", this.onPointerDown);
     canvas.addEventListener("pointermove", this.onPointerMove);
     canvas.addEventListener("pointerup", this.onPointerUp);
@@ -76,9 +84,11 @@ export class WalkController {
   }
 
   private hitCharacter(): boolean {
-    if (!this.camera || !this.target) return false;
+    if (!this.camera) return false;
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    return this.raycaster.intersectObject(this.target, false).length > 0;
+    if (this.grabProxy && this.raycaster.intersectObject(this.grabProxy, false).length) return true;
+    if (this.target && this.raycaster.intersectObject(this.target, false).length) return true;
+    return false;
   }
 
   private onPointerDown = (e: PointerEvent) => {
@@ -101,9 +111,10 @@ export class WalkController {
     if (!this.enabled || !this.dragging) return;
     const dx = e.clientX - this.downX;
     const dy = e.clientY - this.downY;
-    // Screen → walk stick: right = +X, up = forward (-Z)
-    this.dragX = clamp(dx / (90 * DRAG_SCALE), -1, 1);
-    this.dragY = clamp(-dy / (90 * DRAG_SCALE), -1, 1);
+    // Screen → world (camera looks from +Z toward character):
+    //   drag right → +X, drag up → -Z (forward / away from camera)
+    this.dragX = clamp(dx / (72 * DRAG_SCALE), -1, 1);
+    this.dragY = clamp(dy / (72 * DRAG_SCALE), -1, 1);
   };
 
   private onPointerUp = (e: PointerEvent) => {

@@ -201,6 +201,7 @@ function bootstrap(): void {
     walkCtrl.enabled = false;
     walkStage.setEnabled(false);
     squish.setInputEnabled(true);
+    cameraManager.resetFov();
     characters.slime.position.set(0, 0, 0);
     characters.slime.rotation.set(0, 0, 0);
     sceneManager.shadowMesh.position.set(0, -1.4, 0);
@@ -503,18 +504,21 @@ function bootstrap(): void {
       walkCtrl.update(dt, state, walkStage.bounds, walkStage.groundY);
       walkStage.update(walkCtrl.position.z);
       walkCtrl.applyToMesh(characters.slime);
-      // Shadow follows character
       sceneManager.shadowMesh.position.x = walkCtrl.position.x;
       sceneManager.shadowMesh.position.z = walkCtrl.position.z;
-      // Fixed wide follow camera — always show most of the island.
-      const cx = walkCtrl.position.x * 0.25;
-      const cz = walkCtrl.position.z * 0.2 + 11.5;
-      walkCamPos.set(cx, 9.5, cz);
+      // Portrait phones need a wider FOV + more pull-back to see the path.
+      const aspect = cameraManager.camera.aspect;
+      const portrait = aspect < 1.05;
+      cameraManager.setFov(portrait ? 52 : 40);
+      const camY = portrait ? 14 : 9.8;
+      const camBack = portrait ? 16 : 12;
+      const follow = portrait ? 0.12 : 0.25;
+      walkCamPos.set(walkCtrl.position.x * follow, camY, walkCtrl.position.z * follow + camBack);
       cameraManager.camera.position.lerp(walkCamPos, 1 - Math.exp(-3.5 * dt));
       walkCamLook.set(
-        walkCtrl.position.x * 0.35,
-        walkCtrl.position.y + 0.5,
-        walkCtrl.position.z * 0.35,
+        walkCtrl.position.x * 0.3,
+        walkCtrl.position.y + 0.4,
+        walkCtrl.position.z * 0.3,
       );
       cameraManager.camera.lookAt(walkCamLook);
       // Hide option dock while walking; show again after a short idle.
