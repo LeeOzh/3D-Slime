@@ -7,6 +7,7 @@
 
 export interface PerfProfile {
   isMobile: boolean;
+  isIOS: boolean;
   sphereSegments: number;
   capSegments: number;
   maxDpr: number;
@@ -16,7 +17,10 @@ export interface PerfProfile {
   useSheen: boolean;
   particlePool: number;
   faceCanvasSize: number;
+  /** Min ms between face canvas draws (iOS texture upload is expensive). */
+  faceMinIntervalMs: number;
   idleNormalEvery: number;
+  liveNormalEvery: number;
 }
 
 export type GpuTier = 0 | 1 | 2;
@@ -31,11 +35,22 @@ function detectMobile(): boolean {
   return false;
 }
 
+function detectIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  // iOS / iPadOS (desktop-mode iPad still reports Mobile or touch+Mac)
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
+
 const mobile = detectMobile();
+const ios = detectIOS();
 
 /** Boot quality — keep look close to desktop. */
 export const PERF: PerfProfile = {
   isMobile: mobile,
+  isIOS: ios,
   // 72 keeps silhouette smooth; 48 was visibly faceted.
   sphereSegments: mobile ? 72 : 96,
   capSegments: mobile ? 36 : 48,
@@ -46,7 +61,11 @@ export const PERF: PerfProfile = {
   useSheen: true,
   particlePool: mobile ? 32 : 48,
   faceCanvasSize: 512,
+  // iOS CanvasTexture upload is much slower than Chrome — throttle face redraws.
+  faceMinIntervalMs: ios ? 80 : 33,
   idleNormalEvery: mobile ? 2 : 2,
+  // Recompute normals every N frames while interacting (iOS CPU/WebGL bound).
+  liveNormalEvery: ios ? 2 : mobile ? 1 : 1,
 };
 
 /** Runtime GPU quality steps (materials / DPR only — no mesh rebuild). */
@@ -125,14 +144,16 @@ export class AdaptiveQuality {
       return;
     }
 
-    // Sustained low FPS → step down.
+    // Sustained low FPS → step down. iOS reacts one second sooner
+    // (transmission RT + canvas upload are the usual cliffs).
     if (fps < 48) {
       this.badSeconds += 1;
     } else {
       this.badSeconds = 0;
     }
 
-    if (this.badSeconds >= 2 && this.tier < 2) {
+    const needBad = PERF.isIOS ? 1 : 2;
+    if (this.badSeconds >= needBad && this.tier < 2) {
       this.tier = (this.tier + 1) as GpuTier;
       this.badSeconds = 0;
       this.cooldown = 3;

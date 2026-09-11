@@ -4,7 +4,7 @@ import { CHARACTERS, TINTS } from "./core/constants";
 import { eventBus } from "./core/EventBus";
 import type { CharacterDef, GameState } from "./core/types";
 import { createSoftBodyState } from "./core/softBody";
-import { AdaptiveQuality, gpuTierSettings } from "./core/perf";
+import { AdaptiveQuality, gpuTierSettings, PERF } from "./core/perf";
 import { AnimationLoop } from "./three/AnimationLoop";
 import { CameraFeedback } from "./three/CameraFeedback";
 import { CameraManager } from "./three/CameraManager";
@@ -401,7 +401,8 @@ function bootstrap(): void {
         `Velocity:`,
         `  X ${rot.velX.toFixed(2)}  Y ${rot.velY.toFixed(2)}  Z ${rot.velZ.toFixed(2)}`,
         `Pointers: ${squish.getPointerList().length}`,
-        `FPS: ${softBodySys.getFps().toFixed(0)}  GPU tier: ${adaptive.currentTier}`,
+        `FPS: ${softBodySys.getFps().toFixed(0)}  GPU tier: ${adaptive.currentTier}  iOS: ${PERF.isIOS ? "Y" : "n"}`,
+        `Draws: ${renderer.renderer.info.render.calls}  tris: ${renderer.renderer.info.render.triangles}`,
         "---------------------",
       ].join("\n");
     }

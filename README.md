@@ -170,10 +170,13 @@ GameState {
 
 - SoftBody 配置按角色缓存、pointer buffer 复用、活跃区域形变循环（CPU）
 - **默认高画质**：透射/清漆/光泽、DPR 2、AA、72–96 段球体
-- **自适应 GPU 档位**：仅当连续约 2s FPS&lt;48 才降 DPR / 透射；不靠「一上来就糊」换帧率
-- 手机球体 72 段（比 96 略省，轮廓仍圆）
+- **自适应 GPU 档位**：连续 FPS&lt;48 才降 DPR / 透射（iOS 更快进入）
+- **iOS 专项**（iPhone 常比同级 Android 卡）：
+  - 脸部 Canvas 贴图限频（约 12fps），避免每帧 `needsUpdate` 上传
+  - 交互中法线隔帧重算
+  - transmission 会额外整屏 RT pass（Three `renderTransmissionPass`），自适应会在持续掉帧时关掉
 
-Debug：`?debug=softbody` 可看 FPS 与 GPU tier。
+Debug：`?debug=softbody` 可看 FPS / GPU tier / draw calls。
 
 ### V3.1 Soft Body Pose Feedback
 

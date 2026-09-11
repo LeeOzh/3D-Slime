@@ -24,6 +24,7 @@ export class ExpressionSystem {
   private lastGlanceY = 0;
   private lastGlance = 0;
   private lastYawn = 0;
+  private lastFaceDrawAt = 0;
 
   markDirty(): void {
     this.dirty = true;
@@ -137,25 +138,31 @@ export class ExpressionSystem {
     const dt = 1 / 60;
     this.blendEye += (target.eyeOpen - this.blendEye) * (1 - Math.exp(-lambda * dt));
     this.blendMouth += (target.mouthOpen - this.blendMouth) * (1 - Math.exp(-lambda * dt));
-    // Redraw when dirty or while blending is still moving.
     const blending =
       Math.abs(target.eyeOpen - this.blendEye) > 0.01 ||
       Math.abs(target.mouthOpen - this.blendMouth) > 0.01;
-    // Eyes track the pointer — redraw while glance is moving.
+
+    // Expression changes always redraw. Glance tracking is rate-limited
+    // (iOS CanvasTexture upload is a real frame-time cliff).
+    const mustDraw = state.faceDirty || this.dirty || blending;
     const glanceMoving =
-      Math.abs(state.glanceNdc.x - this.lastGlanceX) > 0.01 ||
-      Math.abs(state.glanceNdc.y - this.lastGlanceY) > 0.01 ||
-      Math.abs(state.glance - this.lastGlance) > 0.02 ||
-      Math.abs(state.yawn - this.lastYawn) > 0.04;
-    this.lastGlanceX = state.glanceNdc.x;
-    this.lastGlanceY = state.glanceNdc.y;
-    this.lastGlance = state.glance;
-    this.lastYawn = state.yawn;
-    if (state.faceDirty || this.dirty || blending || glanceMoving) {
+      Math.abs(state.glanceNdc.x - this.lastGlanceX) > 0.05 ||
+      Math.abs(state.glanceNdc.y - this.lastGlanceY) > 0.05 ||
+      Math.abs(state.glance - this.lastGlance) > 0.07 ||
+      Math.abs(state.yawn - this.lastYawn) > 0.07;
+    const nowMs = performance.now();
+    const intervalOk = nowMs - this.lastFaceDrawAt >= PERF.faceMinIntervalMs;
+
+    if (mustDraw || (glanceMoving && intervalOk)) {
+      this.lastGlanceX = state.glanceNdc.x;
+      this.lastGlanceY = state.glanceNdc.y;
+      this.lastGlance = state.glance;
+      this.lastYawn = state.yawn;
       this.drawFace(state, character, faceCtx, target);
       faceTex.needsUpdate = true;
       state.faceDirty = false;
       this.dirty = false;
+      this.lastFaceDrawAt = nowMs;
     }
   }
 
