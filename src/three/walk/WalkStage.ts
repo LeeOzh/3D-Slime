@@ -46,6 +46,11 @@ export class WalkStage {
     this.group.visible = on;
   }
 
+  /** Infinite-path prop recycle. */
+  update(charZ: number): void {
+    this.content?.update?.(charZ);
+  }
+
   private unload(): void {
     if (!this.content) return;
     this.group.remove(this.content.root);

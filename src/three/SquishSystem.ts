@@ -48,6 +48,7 @@ export class SquishSystem {
   private lastPetSoundAt = 0;
   private lastPetParticleAt = 0;
   private petPath = 0;
+  private inputEnabled = true;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -85,6 +86,16 @@ export class SquishSystem {
     this.pointerArr.length = 0;
     for (const p of this.pointers.values()) this.pointerArr.push(p);
     return this.pointerArr;
+  }
+
+  /** Disable squeeze input (walk mode owns the character drag). */
+  setInputEnabled(v: boolean): void {
+    this.inputEnabled = v;
+    if (!v) {
+      this.pointers.clear();
+      this.state.pressing = false;
+      this.state.dragging = false;
+    }
   }
 
   private setPointerNdc(e: PointerEvent): void {
@@ -137,6 +148,7 @@ export class SquishSystem {
     const soft = state.softBody;
 
     canvas.addEventListener("pointerdown", (e) => {
+      if (!this.inputEnabled) return;
       this.sound.unlock();
       this.idle.markInteraction();
       try {
@@ -191,6 +203,7 @@ export class SquishSystem {
     });
 
     canvas.addEventListener("pointermove", (e) => {
+      if (!this.inputEnabled) return;
       this.setPointerNdc(e);
       const now = performance.now();
       const ptr = this.pointers.get(e.pointerId);

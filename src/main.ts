@@ -36,7 +36,12 @@ import { StorageManager } from "./storage/StorageManager";
 import { WalkStage } from "./three/walk/WalkStage";
 import { WalkController } from "./three/walk/WalkController";
 import { ScenePanel } from "./ui/ScenePanel";
-import { WALK_SCENES, type StageMode, type WalkSceneId } from "./game/walkTypes";
+import {
+  defaultWalkSceneId,
+  listWalkScenes,
+  type StageMode,
+  type WalkSceneId,
+} from "./game/walkTypes";
 
 function showError(message: string): void {
   document.body.insertAdjacentHTML(
@@ -145,7 +150,8 @@ function bootstrap(): void {
 
   // --- Walk mode ---
   let stageMode: StageMode = "squish";
-  let walkSceneId: WalkSceneId = "meadow";
+  let walkSceneId: WalkSceneId = defaultWalkSceneId();
+  const walkSceneList = listWalkScenes();
   const walkStage = new WalkStage(sceneManager.scene);
   const walkCtrl = new WalkController();
   const modeTag = document.getElementById("mode-tag");
@@ -156,10 +162,11 @@ function bootstrap(): void {
   const restCamPos = new THREE.Vector3(0, 0.12, cameraManager.restZ);
   const walkCamPos = new THREE.Vector3(0, 5.2, 7.5);
   const walkCamLook = new THREE.Vector3();
+  let walkUiHideAt = 0;
 
   function setWalkUi(on: boolean): void {
     document.body.classList.toggle("is-walk", on);
-    if (sceneRow) sceneRow.hidden = !on;
+    if (sceneRow) sceneRow.hidden = !on || PERF.isMobile;
     if (walkBar) walkBar.hidden = !on;
     if (modeTag) modeTag.textContent = on ? "散步" : "捏捏";
   }
@@ -171,12 +178,19 @@ function bootstrap(): void {
     walkStage.setEnabled(true);
     walkCtrl.enabled = true;
     walkCtrl.resetToOrigin();
+    squish.setInputEnabled(false);
     characters.slime.position.set(0, 0, 0);
     characters.slime.rotation.y = 0;
     sceneManager.shadowMesh.position.set(0, -1.4, 0);
     restCamPos.copy(cameraManager.camera.position);
     setWalkUi(true);
-    badge.say("方向键 / 左下摇杆走路");
+    const hint = document.getElementById("hint");
+    if (hint) {
+      hint.textContent = PERF.isMobile
+        ? "按住小家伙拖动走路 · 返回捏捏退出"
+        : "按住角色拖动 / 方向键走路 · Esc 返回";
+    }
+    badge.say("按住我拖着走");
     idleSys.markInteraction();
     sound.playSpecial("character");
   }
@@ -186,12 +200,16 @@ function bootstrap(): void {
     stageMode = "squish";
     walkCtrl.enabled = false;
     walkStage.setEnabled(false);
+    squish.setInputEnabled(true);
     characters.slime.position.set(0, 0, 0);
     characters.slime.rotation.set(0, 0, 0);
     sceneManager.shadowMesh.position.set(0, -1.4, 0);
     cameraManager.camera.position.copy(restCamPos);
     cameraManager.camera.lookAt(0, 0, 0);
     setWalkUi(false);
+    document.body.classList.remove("is-walk-moving");
+    const hint = document.getElementById("hint");
+    if (hint) hint.textContent = "按住捏扁 · 拖脸拉伸 · 双指捏合 · 按方向键走路 · 双击开心跳";
     badge.say("回来捏捏啦");
     idleSys.markInteraction();
   }
@@ -203,17 +221,22 @@ function bootstrap(): void {
       walkCtrl.resetToOrigin();
     }
     scenePanel?.setActive(id);
-    const def = WALK_SCENES.find((s) => s.id === id);
+    const def = walkSceneList.find((s) => s.id === id);
     if (def) badge.say(`场景 · ${def.name}`);
   }
 
   let scenePanel: ScenePanel | null = null;
   const scenesRoot = document.getElementById("scenes");
-  if (scenesRoot) {
-    scenePanel = new ScenePanel(scenesRoot, selectWalkScene, walkSceneId);
+  // Mobile has a single scene — hide the picker.
+  if (sceneRow && PERF.isMobile) sceneRow.hidden = true;
+  if (scenesRoot && !PERF.isMobile) {
+    scenePanel = new ScenePanel(scenesRoot, walkSceneList, selectWalkScene, walkSceneId);
   }
 
   walkExit?.addEventListener("click", () => exitWalk());
+  document.getElementById("walk-enter")?.addEventListener("click", () => enterWalk());
+  // Grab-drag walk on the character (mobile primary control).
+  walkCtrl.bindCharacter(canvas, cameraManager.camera, characters.slime);
 
   // Virtual d-pad
   if (walkPad) {
@@ -478,18 +501,32 @@ function bootstrap(): void {
 
     if (stageMode === "walk") {
       walkCtrl.update(dt, state, walkStage.bounds, walkStage.groundY);
+      walkStage.update(walkCtrl.position.z);
       walkCtrl.applyToMesh(characters.slime);
       // Shadow follows character
       sceneManager.shadowMesh.position.x = walkCtrl.position.x;
       sceneManager.shadowMesh.position.z = walkCtrl.position.z;
-      // Follow camera
-      const cx = walkCtrl.position.x * 0.85;
-      const cz = walkCtrl.position.z * 0.85 + 6.2;
-      walkCamPos.set(cx, 4.8, cz);
-      cameraManager.camera.position.lerp(walkCamPos, 1 - Math.exp(-4 * dt));
-      walkCamLook.set(walkCtrl.position.x, 0.7, walkCtrl.position.z);
+      // Fixed wide follow camera — always show most of the island.
+      const cx = walkCtrl.position.x * 0.25;
+      const cz = walkCtrl.position.z * 0.2 + 11.5;
+      walkCamPos.set(cx, 9.5, cz);
+      cameraManager.camera.position.lerp(walkCamPos, 1 - Math.exp(-3.5 * dt));
+      walkCamLook.set(
+        walkCtrl.position.x * 0.35,
+        walkCtrl.position.y + 0.5,
+        walkCtrl.position.z * 0.35,
+      );
       cameraManager.camera.lookAt(walkCamLook);
+      // Hide option dock while walking; show again after a short idle.
+      const nowMs = performance.now();
+      if (walkCtrl.getSpeed() > 0.35) {
+        walkUiHideAt = nowMs + 280;
+        document.body.classList.add("is-walk-moving");
+      } else if (nowMs > walkUiHideAt) {
+        document.body.classList.remove("is-walk-moving");
+      }
     } else {
+      document.body.classList.remove("is-walk-moving");
       sceneManager.shadowMesh.position.x = 0;
       sceneManager.shadowMesh.position.z = 0;
     }

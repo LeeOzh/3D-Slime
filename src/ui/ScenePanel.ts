@@ -1,12 +1,18 @@
-import { WALK_SCENES, type WalkSceneId } from "../game/walkTypes";
+import type { WalkSceneDef, WalkSceneId } from "../game/walkTypes";
 
 export class ScenePanel {
   constructor(
     private readonly root: HTMLElement,
+    private readonly scenes: WalkSceneDef[],
     onSelect: (id: WalkSceneId) => void,
     initialId: WalkSceneId,
   ) {
-    WALK_SCENES.forEach((sc) => {
+    this.rebuild(onSelect, initialId);
+  }
+
+  private rebuild(onSelect: (id: WalkSceneId) => void, initialId: WalkSceneId): void {
+    this.root.innerHTML = "";
+    this.scenes.forEach((sc) => {
       const btn = document.createElement("button");
       btn.className = "scene-btn" + (sc.id === initialId ? " is-active" : "");
       btn.dataset.id = sc.id;
@@ -17,7 +23,7 @@ export class ScenePanel {
         <span class="scene-name">${sc.name}</span>
       `;
       btn.addEventListener("click", () => onSelect(sc.id));
-      root.appendChild(btn);
+      this.root.appendChild(btn);
     });
   }
 

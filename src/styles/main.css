@@ -697,4 +697,53 @@ footer {
 body.is-walk .walk-only { display: flex; }
 body.is-walk #glow { opacity: 0.25; }
 body:not(.is-walk) .walk-only { display: none !important; }
+body.is-walk .walk-enter-row { display: none !important; }
+
+.walk-enter-row {
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.walk-enter {
+  pointer-events: auto;
+  padding: 8px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* While walking: hide all chrome including virtual pad. */
+body.is-walk-moving .dock,
+body.is-walk-moving .stats,
+body.is-walk-moving #hint,
+body.is-walk-moving .badge,
+body.is-walk-moving .walk-exit,
+body.is-walk-moving .brand p {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+
+/* Pad fades but keeps hit-testing so an active hold can still release. */
+body.is-walk-moving .walk-pad {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+body.is-walk .dock,
+body.is-walk .stats,
+body.is-walk #hint,
+body.is-walk .badge,
+body.is-walk .walk-exit,
+body.is-walk .walk-pad,
+body.is-walk .brand p {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
 
